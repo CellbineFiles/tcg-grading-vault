@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="water">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TCG Grading Tracker — Local Vault</title>
+  <link rel="stylesheet" href="/static/styles.css?v=73" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand" id="nav-home" role="button" tabindex="0">
+        <div class="brand-badge" id="brand-badge-box" title="TCG Vault">
+          <svg viewBox="0 0 36 36" width="24" height="24" aria-hidden="true">
+            <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" stroke-width="2.4"/>
+            <path d="M3 18h10a5 5 0 0 0 10 0h10" fill="none" stroke="currentColor" stroke-width="2.4"/>
+            <circle cx="18" cy="18" r="3.2" fill="currentColor"/>
+          </svg>
+        </div>
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div class="brand-title" id="brand-title-text">TCG Grading Vault</div>
+            <button type="button" class="btn-icon-edit" id="btn-edit-brand" title="Customize Vault Name &amp; Icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+          </div>
+          <div class="brand-sub" id="brand-sub-text">100% Local Storage • TCG Slab &amp; Profit Tracker</div>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-secondary" id="btn-page-help" title="Page Guide &amp; Feature Help">❓ How To</button>
+        <button class="btn btn-secondary" id="btn-share-overall">📤 Share All Stats</button><span class="info-tip" id="tip-share-overall" data-tip="Generate a downloadable PNG summary of your entire grading history.">ⓘ</span>
+        <button class="btn btn-secondary" id="btn-open-import">📥 Import Excel</button><span class="info-tip" data-tip="Import submissions and cards from an .xlsx workbook.">ⓘ</span>
+        <button class="btn btn-secondary" id="btn-open-settings">⚙️ Theme</button><span class="info-tip" data-tip="Switch between Pokémon Energy, Technology, and Holiday visual themes.">ⓘ</span>
+        <button class="btn btn-ghost" id="btn-home-nav" style="display:none;">← Home</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- HOME VIEW -->
+    <section id="view-home" class="view active">
+      <!-- Symmetrical Hero Dashboard: 3x2 Stats + Top Profitable Slab Showcase -->
+      <div class="hero-dashboard">
+        <div class="snapshot-grid" id="snapshot-grid">
+          <div class="stat-card stat-emerald">
+            <div class="stat-label">Completed Grading</div>
+            <div class="stat-value" id="stat-completed">0</div>
+            <div class="stat-sub" id="stat-total-cards">0 total cards tracked</div>
+          </div>
+          <div class="stat-card stat-amber">
+            <div class="stat-label">Still Being Graded</div>
+            <div class="stat-value accent-amber" id="stat-grading">0</div>
+            <div class="stat-sub" id="stat-subs-count">0 submissions</div>
+          </div>
+          <div class="stat-card stat-gem holo-card">
+            <div class="stat-label">Combined Gem Rate (10s)</div>
+            <div class="stat-value accent-gem" id="stat-gem-rate">0.0%</div>
+            <div class="stat-sub" id="stat-gem-sub">0 of 0 graded hit 10</div>
+          </div>
+          <div class="stat-card stat-slate">
+            <div class="stat-label">Total Collective Costs</div>
+            <div class="stat-value" id="stat-total-cost">$0.00</div>
+            <div class="stat-sub" id="stat-cost-breakdown">Acq $0 • Grade $0 • Ship $0</div>
+          </div>
+          <div class="stat-card stat-blue">
+            <div class="stat-label">Total Sold / Card Values <span class="info-tip" data-tip="Top: Total Sold Revenue. Below: Total Card Values of unsold cards (uses graded market value if graded, or acquisition cost if ungraded).">ⓘ</span></div>
+            <div class="stat-value accent-blue" id="stat-total-sold">$0.00</div>
+            <div class="stat-sub" id="stat-sold-count">0 cards sold • Unsold Est. $0.00</div>
+          </div>
+          <div class="stat-card stat-profit">
+            <div class="stat-label">Realized / Unrealized Profit <span class="info-tip" data-tip="Top: Realized Profit on Sold cards. Middle: Unrealized Profit on Unsold/Held cards with market values. Bottom: Net cash vs. all costs.">ⓘ</span></div>
+            <div class="stat-value" id="stat-profit">$0.00</div>
+            <div class="stat-sub" id="stat-unrealized-profit" style="font-weight:700;">Unrealized (Unsold/Hold): $0.00</div>
+            <div class="stat-sub" id="stat-net-overall">Net cash vs. all costs: $0.00</div>
+          </div>
+          <div class="stat-card" style="border-top:2px solid #a855f7;">
+            <div class="stat-label">Not Shipped / Preload</div>
+            <div class="stat-value" id="stat-not-shipped" style="color:#c084fc;">0</div>
+            <div class="stat-sub" id="stat-not-shipped-sub">0 Not Shipped subs</div>
+          </div>
+          <div class="stat-card" style="border-top:2px solid #38bdf8;">
+            <div class="stat-label">Portfolio ROI</div>
+            <div class="stat-value" id="stat-roi">0.0%</div>
+            <div class="stat-sub" id="stat-roi-sub">Realized: 0.0% • Unsold Est.: 0.0%</div>
+          </div>
+        </div>
+
+        <!-- Top Profitable Graded Card Showcase -->
+        <div class="showcase-card holo-card" id="top-slab-showcase">
+          <div class="showcase-header">
+            <span class="showcase-kicker">🏆 Top Profitable Slab <span class="info-tip" data-tip="Highlights your highest-profit graded card (sold or unsold/held using Market Value).">ⓘ</span></span>
+            <span class="pill pill-gem" id="showcase-grade-pill" style="display:none;"></span>
+          </div>
+          <div id="showcase-body" class="showcase-body">
+            <div class="showcase-empty muted">Sell a graded card to feature your highest-profit slab here.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;margin:-6px 0 8px 0;">
+        <button type="button" class="btn-icon-edit" id="btn-refresh-stats" title="Recalculate Home Stats &amp; Top Profitable Slab" style="opacity:0.45;display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:2px 8px;border-radius:8px;border:1px solid var(--border);"><svg class="svg-icon" style="width:13px;height:13px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg> Recalculate Stats</button>
+      </div>
+
+      <!-- Visual Grading Progress Bar -->
+      <div class="progress-panel" id="progress-panel" style="display:none;">
+        <div class="progress-header">
+          <span class="progress-title">Collection Pipeline <span class="info-tip" data-tip="Hover any bar segment for exact counts: Green = Sold, Blue = Unsold/Hold/Listed, Orange = In Grading, Purple = Not Submitted.">ⓘ</span></span>
+          <span class="progress-legend" id="progress-legend"></span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-seg seg-sold" id="prog-sold" title="Sold cards"></div>
+          <div class="progress-seg seg-graded" id="prog-graded" title="Unsold / Hold / Listed cards"></div>
+          <div class="progress-seg seg-grading" id="prog-grading" title="In Grading cards"></div>
+          <div class="progress-seg seg-not-submitted" id="prog-not-submitted" title="Not Submitted / Preload cards"></div>
+        </div>
+      </div>
+
+      <!-- Sort & Filter Toolbar -->
+      <div class="toolbar" style="gap:12px;">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <h2 class="section-title" style="margin:0;">Submissions</h2>
+          <input type="search" id="home-card-search" class="home-search-input" placeholder="🔍 Search any card across all subs..." />
+        </div>
+        <div class="toolbar-controls">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-open-all-cards" title="Browse &amp; search every card in your database">🗂️ All Cards</button><span class="info-tip" data-tip="Browse, filter, and search every card across all submissions in one unified view.">ⓘ</span>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-open-import-bundle" title="Import exported submission bundles (.zip) into your database">📥 Import Sub</button><span class="info-tip" data-tip="Import submission .zip bundles exported from another vault (also auto-imports any .zip or folder dropped into data/shared_submissions/).">ⓘ</span>
+          <label class="control-group">
+            <span>Sort</span>
+            <select id="sort-select">
+              <option value="newest">Date: Newest First</option>
+              <option value="oldest">Date: Oldest First</option>
+              <option value="gem_desc">Highest Gem Rate</option>
+              <option value="company">Company (A–Z)</option>
+              <option value="cost_desc">Highest Total Cost</option>
+              <option value="profit_desc">Highest Profit</option>
+              <option value="cards_desc">Most Cards</option>
+            </select>
+          </label>
+          <label class="control-group">
+            <span>Company</span>
+            <select id="filter-company">
+              <option value="ALL">All Companies</option>
+              <option value="PSA">PSA</option>
+              <option value="CGC">CGC</option>
+              <option value="Beckett">Beckett</option>
+              <option value="TAG">TAG</option>
+            </select>
+          </label>
+          <label class="control-group">
+            <span>Status</span>
+            <select id="filter-status">
+              <option value="ALL">All Statuses</option>
+              <option value="Not Shipped">Not Shipped</option>
+              <option value="In Grading">In Grading</option>
+              <option value="Partially Graded">Partially Graded</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </label>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-home-view-mode" title="Toggle between Cards view and compact List view">☰ List</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-sub-colors" title="Customize Completed &amp; Partially Complete card outline colors">🎨 Card Colors</button><span class="info-tip" data-tip="Customize outline colors for Completed, Partially Graded, In Grading, and Not Shipped—or toggle No outline per status.">ⓘ</span>
+        </div>
+      </div>
+
+      <!-- Home Global Card Search Results -->
+      <div id="home-card-results" style="display:none;margin-bottom:20px;"></div>
+
+      <!-- Tiles Grid (Top-left is "+" tile) -->
+      <div class="tiles-grid" id="submissions-grid"></div>
+    </section>
+
+    <!-- NEW SUBMISSION WIZARD VIEW -->
+    <section id="view-wizard" class="view">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 id="wizard-title">New Grading Submission</h2>
+            <p class="muted" id="wizard-subtitle">Step 1: Choose grading company and submission details</p>
+          </div>
+          <button class="btn btn-ghost" id="btn-wizard-cancel">Cancel</button>
+        </div>
+
+        <!-- Step 1: Submission Details -->
+        <form id="wizard-step-1" class="form-grid">
+          <div class="form-field full">
+            <label>Grading Company *</label>
+            <div class="company-picker" id="company-picker">
+              <button type="button" class="company-option" data-company="PSA">PSA</button>
+              <button type="button" class="company-option" data-company="CGC">CGC</button>
+              <button type="button" class="company-option" data-company="Beckett">Beckett</button>
+              <button type="button" class="company-option" data-company="TAG">TAG</button>
+            </div>
+            <input type="hidden" id="sub-company" value="" />
+            <div id="company-error-msg" style="display:none;color:#f87171;font-size:12px;font-weight:600;margin-top:6px;">Please select a grading company (PSA, CGC, or Beckett) first.</div>
+          </div>
+          <div class="form-field">
+            <label for="sub-title">Submission Name / Label *</label>
+            <input type="text" id="sub-title" placeholder="e.g., PSA Nov Bulk #1" required />
+          </div>
+          <div class="form-field">
+            <label for="sub-number">Submission / Order #</label>
+            <input type="text" id="sub-number" placeholder="e.g., 12345678" />
+          </div>
+          <div class="form-field">
+            <label for="sub-date">Date Submitted</label>
+            <input type="date" id="sub-date" />
+          </div>
+          <div class="form-field">
+            <label for="sub-notes">Notes</label>
+            <input type="text" id="sub-notes" placeholder="Service tier, turnaround, etc." />
+          </div>
+          <div class="form-field">
+            <label>Preload Status <span class="info-tip" data-tip="Check this if you haven't shipped or dropped off the submission yet. Outlines the card purple on Home and defaults cards to Not Submitted.">ⓘ</span></label>
+            <label class="inline-check-box">
+              <input type="checkbox" id="sub-not-shipped" />
+              <span>📦 Not shipped / dropped off yet (Preload)</span>
+            </label>
+          </div>
+          <div class="form-field">
+            <label>Submitted Via (Optional) <span class="info-tip" data-tip="Optionally tag whether this submission was sent through Fanatics Collect or GameStop.">ⓘ</span></label>
+            <div class="inline-check-box">
+              <label class="inline-check-opt">
+                <input type="checkbox" id="sub-ch-fanatics" class="wiz-channel-cb" value="Fanatics" />
+                <span>Fanatics</span>
+              </label>
+              <label class="inline-check-opt">
+                <input type="checkbox" id="sub-ch-gamestop" class="wiz-channel-cb" value="GameStop" />
+                <span>GameStop</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-actions full">
+            <button type="submit" class="btn btn-primary">Continue to Add Cards →</button>
+          </div>
+        </form>
+
+        <div class="card-section" id="wizard-smart-import-box" style="margin-top:18px;">
+          <div class="card-section-header">
+            <span class="card-section-title">⚡ Unified Submission Import (CSV, TXT, PDF, Excel, Word, or Screenshot) <span class="info-tip" data-tip="One drop-in importer for PSA Order CSVs, PSA Submission Form PDFs (auto-splits grading/shipping & deduplicates Copy #1/#2), Fanatics CSVs, GameStop/BGS copied text or printed PDFs, Excel/Word cert lists, or submission screenshots (OCR). Filenames are ignored.">ⓘ</span></span>
+          </div>
+          <p class="muted" style="margin-top:0;font-size:13px;">
+            Upload any supported file (<code>.csv</code>, <code>.txt</code>, <code>.pdf</code>, <code>.xlsx</code>, <code>.docx</code>, or <code>.png/.jpg/.webp</code> screenshot) to create this submission and populate all cards automatically.
+          </p>
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+            <input type="file" id="wiz-cert-doc-file" accept=".csv,.txt,.tsv,.pdf,.xlsx,.docx,.png,.jpg,.jpeg,.webp" />
+            <button type="button" class="btn btn-secondary" id="btn-wiz-create-from-certs">⚡ Import &amp; Create Submission</button>
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+              <input type="checkbox" id="wiz-auto-pull-certs" style="width:15px;height:15px;" />
+              <span>Pull slab scans now (headless / background) <span class="info-tip" data-tip="Leave unchecked for instant import when your file already has card names (PSA CSV, Fanatics CSV, GameStop/BGS). Check to pull slab images immediately with a Cancel option.">ⓘ</span></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card-section" id="wizard-ebay-box" style="margin-top:14px;border-color:rgba(0,100,210,0.45);background:linear-gradient(135deg, rgba(229,50,56,0.05), rgba(0,100,210,0.06));">
+          <div class="card-section-header">
+            <span class="card-section-title" style="display:inline-flex;align-items:center;gap:10px;">
+              <svg width="62" height="24" viewBox="0 0 120 46" aria-label="eBay" style="vertical-align:middle;">
+                <text x="2" y="34" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="36" letter-spacing="-2">
+                  <tspan fill="#e53238">e</tspan><tspan fill="#0064d2">b</tspan><tspan fill="#f5af02">a</tspan><tspan fill="#86b817">y</tspan>
+                </text>
+              </svg>
+              <span>Sales &amp; Bookkeeping Import (No Grader Required)</span>
+              <span class="info-tip" data-tip="Completely separate from grading submissions. Upload an eBay Paid & Shipped CSV to match Sold cards and export a zero-PII bookkeeping CSV for taxes.">ⓘ</span>
+            </span>
+          </div>
+          <p class="muted" style="margin-top:0;font-size:13px;">
+            Upload an eBay <strong>Paid &amp; Shipped</strong> CSV report without selecting a grading company. All buyer personal info is stripped; matched vault cards are marked <strong>Sold</strong>.
+          </p>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <input type="file" id="wiz-ebay-csv-file" accept=".csv,text/csv" />
+            <button type="button" class="btn btn-secondary" id="btn-wiz-ebay-import">🧾 Import eBay Sales</button>
+            <button type="button" class="btn btn-secondary" id="btn-wiz-ebay-bookkeeping" style="display:none;">📥 Download Clean Bookkeeping CSV</button>
+          </div>
+          <div id="wiz-ebay-summary" style="display:none;margin-top:10px;font-size:13px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);"></div>
+        </div>
+
+        <!-- Step 2: Add Cards to Submission -->
+        <div id="wizard-step-2" style="display:none;">
+          <div class="wizard-banner">
+            <span id="wizard-sub-badge" class="badge">PSA</span>
+            <strong id="wizard-sub-name">Submission</strong>
+            <span class="pill" id="wizard-cards-added-pill">0 cards added</span>
+          </div>
+
+          <form id="wizard-card-form" class="form-grid">
+            <div class="form-field">
+              <label for="wiz-card-name">Card Name <span class="info-tip" data-tip="Required unless you paste a Graded Card Link or Cert # below—the app will auto-pull the card name for you.">ⓘ</span></label>
+              <input type="text" id="wiz-card-name" placeholder="Optional if Link or Cert # is entered" />
+            </div>
+            <div class="form-field">
+              <label for="wiz-card-qty">Quantity <span class="info-tip" data-tip="Add multiple copies of this card to the submission at once (e.g., 3 creates 3 separate card entries).">ⓘ</span></label>
+              <input type="number" id="wiz-card-qty" min="1" max="200" step="1" value="1" />
+            </div>
+            <div class="form-field">
+              <label for="wiz-set-name">Set Name</label>
+              <input type="text" id="wiz-set-name" placeholder="e.g., Obsidian Flames, Fusion World, Romance Dawn" />
+            </div>
+            <div class="form-field">
+              <label for="wiz-card-year">Year</label>
+              <input type="text" id="wiz-card-year" placeholder="e.g., 2023" />
+            </div>
+            <div class="form-field">
+              <label for="wiz-card-number">Card Number</label>
+              <input type="text" id="wiz-card-number" placeholder="e.g., 223/197" />
+            </div>
+            <div class="form-field">
+              <label for="wiz-fanatics-url">Card / Marketplace Link (Fanatics, eBay, etc.)</label>
+              <input type="url" id="wiz-fanatics-url" placeholder="https://..." />
+            </div>
+
+            <div class="form-field">
+              <label for="wiz-acq-cost">Card Acquisition Cost ($)</label>
+              <input type="number" step="0.01" min="0" id="wiz-acq-cost" class="cost-input" placeholder="0.00" />
+            </div>
+            <div class="form-field">
+              <label for="wiz-grade-cost">Grading Cost ($)</label>
+              <input type="number" step="0.01" min="0" id="wiz-grade-cost" class="cost-input" placeholder="0.00" />
+            </div>
+            <div class="form-field">
+              <label for="wiz-ship-cost">Shipping Cost ($)</label>
+              <input type="number" step="0.01" min="0" id="wiz-ship-cost" class="cost-input" placeholder="0.00" />
+            </div>
+            <div class="form-field">
+              <label for="wiz-cert-num">Cert # (Optional if already graded)</label>
+              <input type="text" id="wiz-cert-num" placeholder="Optional" />
+            </div>
+
+            <div class="form-field full">
+              <label>Grade Predictions (1.0 – 10.0)</label>
+              <div class="subgrades-row" style="grid-template-columns:repeat(5, minmax(0,1fr));">
+                <div>
+                  <span class="sub-lbl">Overall</span>
+                  <input type="text" id="wiz-pred-overall" placeholder="10" />
+                </div>
+                <div>
+                  <span class="sub-lbl">Corners</span>
+                  <input type="number" step="0.5" min="1" max="10" id="wiz-pred-corners" placeholder="9.5" />
+                </div>
+                <div>
+                  <span class="sub-lbl">Edges</span>
+                  <input type="number" step="0.5" min="1" max="10" id="wiz-pred-edges" placeholder="9.5" />
+                </div>
+                <div>
+                  <span class="sub-lbl">Centering</span>
+                  <input type="number" step="0.5" min="1" max="10" id="wiz-pred-centering" placeholder="9.5" />
+                </div>
+                <div>
+                  <span class="sub-lbl">Surface</span>
+                  <input type="number" step="0.5" min="1" max="10" id="wiz-pred-surface" placeholder="9.5" />
+                </div>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label for="wiz-raw-front">Front Photo (Raw Card)</label>
+              <div class="dropzone" data-input="wiz-raw-front">
+                <div class="dropzone-hint">Drag &amp; drop 1 image—or both Front &amp; Back at once (auto-sorted!)</div>
+                <input type="file" id="wiz-raw-front" accept="image/*" multiple />
+                <div class="img-preview" id="wiz-preview-front"></div>
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="wiz-raw-back">Back Photo (Raw Card)</label>
+              <div class="dropzone" data-input="wiz-raw-back">
+                <div class="dropzone-hint">Drag &amp; drop 1 image—or both Front &amp; Back at once (auto-sorted!)</div>
+                <input type="file" id="wiz-raw-back" accept="image/*" multiple />
+                <div class="img-preview" id="wiz-preview-back"></div>
+              </div>
+            </div>
+
+            <div class="form-field full">
+              <label for="wiz-card-notes">Card Notes</label>
+              <input type="text" id="wiz-card-notes" placeholder="Condition notes, print lines, whitening, etc." />
+            </div>
+
+            <div class="form-actions full between">
+              <button type="button" class="btn btn-ghost" id="btn-wiz-finish-only" style="display:none;">
+                Finish &amp; View Submission
+              </button>
+              <div class="btn-group">
+                <button type="submit" data-action="add-more" class="btn btn-secondary">
+                  + Save &amp; Add Another Card
+                </button>
+                <button type="submit" data-action="finish" class="btn btn-primary">
+                  Save &amp; Finish Submission
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUBMISSION DETAIL VIEW -->
+    <section id="view-submission" class="view">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="sub-header-left">
+            <span id="detail-sub-badge" class="badge">PSA</span>
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <h2 id="detail-sub-title" style="margin:0;">Submission</h2>
+                <button type="button" class="btn-icon-edit" id="btn-edit-sub-title" title="Rename Submission"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><div class="muted" id="detail-sub-meta"></div><button type="button" class="btn btn-ghost btn-sm" id="btn-edit-sub-info" style="padding:2px 8px;font-size:11px;display:inline-flex;align-items:center;gap:4px;opacity:0.65;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit Info</button></div>
+            </div>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary" id="btn-share-sub">📤 Share This Sub</button><span class="info-tip" data-tip="Create a shareable PNG infographic for ONLY this submission.">ⓘ</span>
+            <button class="btn btn-secondary" id="btn-export-collectr" title="Generate a Collectr / TCGplayer-formatted CSV or plain-text .txt export for this submission">📋 Export for Collectr</button>
+            <button class="btn btn-secondary" id="btn-export-sub-bundle" title="Export this entire submission (cards + scans) as a portable .zip bundle">📦 Export Sub</button><span class="info-tip" data-tip="Generates a TCGplayer/Collectr-ready CSV and plain-text .txt export with card name, set, collector #, variant, language, condition, grade, and cert #.">ⓘ</span>
+            <button class="btn btn-secondary" id="btn-open-fanatics-csv">📄 Import Fanatics CSV</button><span class="info-tip" data-tip="Match and update cards in this submission from a Fanatics Collect CSV export.">ⓘ</span>
+            <button class="btn btn-secondary" id="btn-open-fanatics-col-sync" style="display:none;">🔗 Attach Fanatics URLs</button>
+            <button class="btn btn-secondary" id="btn-pull-all-values">💲 Pull All Market Values</button><span class="info-tip" data-tip="Prompts to confirm, then pulls fresh PriceCharting Market Values for every card in this submission (overwrites existing values).">ⓘ</span>
+            <button class="btn btn-secondary" id="btn-pull-missing-certs">✨ Pull Missing Scans &amp; Info</button><span class="info-tip" data-tip="Only pulls cert scans and metadata for cards that are still missing them (skips completed cards).">ⓘ</span>
+            <button class="btn btn-secondary" id="btn-force-repull-all-certs">🔁 Overwrite All Cert Scans</button><span class="info-tip" data-tip="Prompts to confirm, then re-downloads fresh HQ slab scans and metadata for EVERY card with a Cert #.">ⓘ</span>
+            <select id="detail-sub-status" class="inline-select">
+              <option value="Not Shipped">Not Shipped</option>
+              <option value="In Grading">In Grading</option>
+              <option value="Partially Graded">Partially Graded</option>
+              <option value="Completed">Completed</option>
+            </select>
+            <button class="btn btn-primary" id="btn-sub-add-card">+ Add Card to Sub</button>
+            <button class="btn btn-danger" id="btn-sub-delete">Delete Sub</button>
+          </div>
+        </div>
+
+        <div class="sub-stats-strip" id="detail-sub-stats"></div>
+        <div class="grade-breakdown-panel" id="detail-grade-breakdown" style="display:none;"></div>
+
+        <div class="sub-search-bar sub-tools-row">
+          <input type="search" id="sub-card-search" placeholder="🔍 Search cards (name, set, #, grade, cert, status)..." />
+          <select id="sub-card-sort" class="sub-sort-select" title="Sort cards">
+            <option value="default">Sort: Order Added</option>
+            <option value="grade_desc">Sort: Highest Grade</option>
+            <option value="name_asc">Sort: Name (A–Z)</option>
+            <option value="value_desc">Sort: Market Value</option>
+            <option value="profit_desc">Sort: Highest Profit</option>
+            <option value="cert_asc">Sort: Cert #</option>
+          </select>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-sub-view-mode" title="Toggle between Cards view and compact List view">☰ List</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-bulk-mode">☑️ Bulk Actions</button><span class="info-tip" data-tip="Select multiple cards to bulk edit costs/set/grade, change status, duplicate, move to another sub, or delete. Stays open until you click Exit Bulk Mode.">ⓘ</span><span class="info-tip" data-tip="Toggle multi-select mode to Set Status, Bulk Edit (set/fees/date), Duplicate, Move, or Delete multiple cards at once.">ⓘ</span>
+        </div>
+        <div class="filter-pills-row" id="sub-filter-pills">
+          <button type="button" class="filter-pill active" data-filter="all">All</button>
+          <button type="button" class="filter-pill" data-filter="complete">Complete</button>
+          <button type="button" class="filter-pill" data-filter="not_submitted">Not Submitted</button>
+          <button type="button" class="filter-pill" data-filter="in_grading">In Grading</button>
+          <button type="button" class="filter-pill" data-filter="unsold">Unsold</button>
+          <button type="button" class="filter-pill" data-filter="hold">Hold</button>
+          <button type="button" class="filter-pill" data-filter="sold">Sold</button>
+          <button type="button" class="filter-pill" data-filter="has_cert">Has Cert</button>
+          <button type="button" class="filter-pill" data-filter="no_cert">No Cert</button>
+          <button type="button" class="filter-pill" data-filter="no_scan">Missing Scan</button>
+        </div>
+        <div class="filter-pills-row" id="sub-grade-pills" style="display:none;"></div>
+        <div class="sub-bulk-bar" id="sub-bulk-bar" style="display:none;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="sub-bulk-count" style="font-weight:700;">0 selected</span>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-bulk-select-all">Select All</button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <select id="bulk-status-select" class="inline-select" style="font-size:12px;padding:4px 8px;">
+              <option value="Not Submitted">Not Submitted</option>
+              <option value="In Grading">In Grading</option>
+              <option value="Unsold">Unsold</option>
+              <option value="Hold">Hold</option>
+              <option value="Listed">Listed</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-bulk-status">🔄 Set Status</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-bulk-edit">✏️ Bulk Edit</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-bulk-duplicate">📋 Duplicate Selected</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-bulk-move">📦 Move Selected</button>
+            <button type="button" class="btn btn-danger btn-sm" id="btn-bulk-delete">🗑️ Delete Selected</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-bulk-clear">Done</button>
+          </div>
+        </div>
+        <div class="cards-list" id="detail-cards-list"></div>
+      </div>
+    </section>
+
+    <!-- ALL CARDS DATABASE VIEW (Read/Search/Sort Only — No Delete) -->
+    <section id="view-all-cards" class="view">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 style="margin:0;">All Cards in Vault</h2>
+            <div class="muted" id="all-cards-count-meta">Browse, search, and sort every card across all submissions (read-only list; open a card to edit).</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btn-all-cards-back">← Home</button>
+        </div>
+        <div class="sub-search-bar sub-tools-row">
+          <input type="search" id="all-cards-search" placeholder="🔍 Search all cards (name, set, #, grade, cert, submission, status)..." />
+          <select id="all-cards-company" class="sub-sort-select">
+            <option value="ALL">All Graders</option>
+            <option value="PSA">PSA</option>
+            <option value="CGC">CGC</option>
+            <option value="Beckett">Beckett</option>
+            <option value="TAG">TAG</option>
+          </select>
+          <select id="all-cards-sort" class="sub-sort-select">
+            <option value="default">Sort: Newest Added</option>
+            <option value="grade_desc">Sort: Highest Grade</option>
+            <option value="name_asc">Sort: Name (A–Z)</option>
+            <option value="value_desc">Sort: Market Value</option>
+            <option value="profit_desc">Sort: Highest Profit</option>
+            <option value="cert_asc">Sort: Cert #</option>
+          </select>
+        </div>
+        <div class="filter-pills-row" id="all-cards-grade-pills" style="display:none;"></div>
+        <div class="cards-list" id="all-cards-list"></div>
+      </div>
+    </section>
+
+    <!-- CARD DETAIL / EDIT VIEW -->
+    <section id="view-card" class="view">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 id="card-detail-heading" style="margin:0;">Edit Card</h2>
+          </div>
+          <div class="btn-group" style="flex-wrap:wrap;margin-left:auto;">
+            <div class="move-sub-group" style="display:flex;align-items:center;gap:6px;">
+              <select id="move-card-sub-select" class="inline-select" title="Move card to another submission"></select>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-move-card">Move</button>
+            </div>
+            <button class="btn btn-secondary" id="btn-share-card">📤 Share Card Stats</button>
+            <button class="btn btn-danger" id="btn-card-delete">Delete Card</button>
+            <button class="btn btn-ghost" id="btn-card-back">← Back to Submission</button>
+          </div>
+        </div>
+
+        <!-- Images Comparison Row: Submitted Raw Photos vs Graded Cert Scans -->
+        <div class="images-compare-grid">
+          <div class="image-group">
+            <div class="image-group-header">
+              <h3>Submitted Raw Photos <span class="muted">(Drop 1 or both—auto-sorted)</span></h3>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-swap-raw" style="display:none;" title="Swap Raw Front &amp; Back">⇄ Swap Front/Back</button>
+            </div>
+            <div class="photo-pair">
+              <div class="photo-slot slab-slot drop-slot" id="slot-raw-front" data-side="raw_front">
+                <span class="photo-tag">Raw Front</span>
+                <img id="img-raw-front" alt="Raw Front" />
+                <div class="photo-empty" id="empty-raw-front">No front photo<br><small>Drop 1 or both raw photos here</small></div>
+                <div class="slot-actions" id="actions-raw-front">
+                  <button type="button" class="btn-slot-link" data-side="raw_front" data-action="open-file">🖼 Open</button>
+                  <button type="button" class="btn-slot-link" data-side="raw_front" data-action="open-folder">📂 Folder</button>
+                </div>
+              </div>
+              <div class="photo-slot slab-slot drop-slot" id="slot-raw-back" data-side="raw_back">
+                <span class="photo-tag">Raw Back</span>
+                <img id="img-raw-back" alt="Raw Back" />
+                <div class="photo-empty" id="empty-raw-back">No back photo<br><small>Drop 1 or both raw photos here</small></div>
+                <div class="slot-actions" id="actions-raw-back">
+                  <button type="button" class="btn-slot-link" data-side="raw_back" data-action="open-file">🖼 Open</button>
+                  <button type="button" class="btn-slot-link" data-side="raw_back" data-action="open-folder">📂 Folder</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="image-group">
+            <div class="image-group-header">
+              <h3>Graded Slab Scans <span class="muted">(Drag &amp; drop or click &amp; Ctrl+V)</span></h3>
+            </div>
+            <div class="photo-pair">
+              <div class="photo-slot slab-slot paste-target drop-slot" id="slot-cert-front" tabindex="0" data-side="cert_front">
+                <span class="photo-tag">Cert Front</span>
+                <img id="img-cert-front" alt="Cert Front" />
+                <div class="photo-empty" id="empty-cert-front">No cert scan yet<br><small>Drag from cert site, drop file, or Ctrl+V</small></div>
+                <div class="slot-actions" id="actions-cert-front">
+                  <button type="button" class="btn-slot-link" data-side="cert_front" data-action="open-file">🖼 Open</button>
+                  <button type="button" class="btn-slot-link" data-side="cert_front" data-action="open-folder">📂 Folder</button>
+                </div>
+              </div>
+              <div class="photo-slot slab-slot paste-target drop-slot" id="slot-cert-back" tabindex="0" data-side="cert_back">
+                <span class="photo-tag">Cert Back</span>
+                <img id="img-cert-back" alt="Cert Back" />
+                <div class="photo-empty" id="empty-cert-back">No cert scan yet<br><small>Drag from cert site, drop file, or Ctrl+V</small></div>
+                <div class="slot-actions" id="actions-cert-back">
+                  <button type="button" class="btn-slot-link" data-side="cert_back" data-action="open-file">🖼 Open</button>
+                  <button type="button" class="btn-slot-link" data-side="cert_back" data-action="open-folder">📂 Folder</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit Card Form organized into clean, compact Section Cards -->
+        <form id="edit-card-form" class="card-sections-stack">
+
+          <!-- Section 1: Cert Puller & Official Grade Results -->
+          <div class="card-section">
+            <div class="card-section-header">
+              <span class="card-section-title">🏅 Cert Verification &amp; Official Grade Results</span>
+              <span id="cert-fetch-status" class="muted" style="font-size:12px;"></span>
+            </div>
+            <div class="compact-grid compact-grid-5">
+              <div class="form-field">
+                <label for="edit-cert-number">Cert Number <span class="info-tip" data-tip="Official PSA, CGC, or Beckett certification number.">ⓘ</span></label>
+                <input type="text" id="edit-cert-number" placeholder="PSA / CGC / BGS #" />
+              </div>
+              <div class="form-field">
+                <label for="edit-actual-grade">Actual Grade <span class="info-tip" data-tip="Final numeric or Pristine/Black Label grade (supports .5 decimals).">ⓘ</span></label>
+                <input type="text" id="edit-actual-grade" placeholder="e.g., 10, Pristine 10" />
+              </div>
+              <div class="form-field">
+                <label for="edit-actual-subgrades">Actual Subgrades <span class="info-tip" data-tip="Optional subgrades (e.g. BGS C:9.5 E:10 Ct:9.5 S:10).">ⓘ</span></label>
+                <input type="text" id="edit-actual-subgrades" placeholder="C:9.5 E:10 Ct:9.5 S:10" />
+              </div>
+              <div class="form-field">
+                <label for="edit-curated-date">Curated Date <span class="info-tip" data-tip="Date curated/vaulted (auto-filled from Fanatics CSV).">ⓘ</span></label>
+                <input type="text" id="edit-curated-date" placeholder="YYYY-MM-DD" />
+              </div>
+              <div class="form-field">
+                <label for="edit-status">Status <span class="info-tip" data-tip="Not Submitted (preloaded), In Grading, Unsold (after grading), Hold (PC/long-term), Listed, or Sold (requires Sold Price).">ⓘ</span></label>
+                <select id="edit-status">
+                  <option value="Not Submitted">Not Submitted</option>
+                  <option value="In Grading">In Grading</option>
+                  <option value="Unsold">Unsold</option>
+                  <option value="Hold">Hold (PC / Long-Term)</option>
+                  <option value="Listed">Listed</option>
+                  <option value="Sold">Sold</option>
+                </select>
+              </div>
+            </div>
+            <div class="section-toolbar">
+              <button type="button" class="btn btn-primary btn-sm" id="btn-pull-cert">Pull Cert Scans</button><span class="info-tip" data-tip="Fetch official slab photos and card details from PSA, CGC, or Beckett.">ⓘ</span>
+              <a id="link-official-cert" class="btn btn-secondary btn-sm" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">Open Official Cert ↗</a>
+              <a id="link-psa-zip" class="btn btn-secondary btn-sm" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">📦 PSA Images Zip ↗</a>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-undo-autofill" style="display:none;" title="Revert last auto-filled cert/market data">↩ Undo Auto-Fill</button>
+            </div>
+          </div>
+
+          <!-- Section 2: Card Identity & Marketplace Link -->
+          <div class="card-section">
+            <div class="card-section-header">
+              <span class="card-section-title">🃏 Card Identity &amp; Graded Link</span>
+            </div>
+            <div class="compact-grid compact-grid-card-id">
+              <div class="form-field">
+                <label for="edit-card-name">Card Name *</label>
+                <input type="text" id="edit-card-name" required />
+              </div>
+              <div class="form-field">
+                <label for="edit-set-name">Set Name</label>
+                <input type="text" id="edit-set-name" placeholder="Auto or manual" />
+              </div>
+              <div class="form-field">
+                <label for="edit-card-year">Year</label>
+                <input type="text" id="edit-card-year" placeholder="2023" />
+              </div>
+              <div class="form-field">
+                <label for="edit-card-number">Card #</label>
+                <input type="text" id="edit-card-number" placeholder="199" />
+              </div>
+            </div>
+            <div class="form-field" style="margin-top:10px;">
+              <label for="edit-fanatics-url">Graded Card / Marketplace Link (Fanatics, PSA, CGC, Beckett, eBay)</label>
+              <div class="input-with-link">
+                <input type="url" id="edit-fanatics-url" placeholder="https://..." />
+                <button type="button" class="btn btn-primary btn-sm" id="btn-pull-from-link" title="Pull cert #, grade, scans &amp; card details from link">🔗 Pull from Link</button><span class="info-tip" data-tip="Read card name, cert #, grade, and slab photos from the pasted marketplace/cert URL.">ⓘ</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-site-login" title="Open local browser to log into Fanatics Collect">🔑 Site Login</button><span class="info-tip" data-tip="Opens the local Vault browser so you can sign into Fanatics Collect or pass Cloudflare once.">ⓘ</span>
+                <a id="link-fanatics" class="btn btn-secondary btn-sm" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">Open Link ↗</a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 3: Two-Column Split — Costs & Predicted Subgrades -->
+          <div class="card-sections-two-col">
+            <div class="card-section">
+              <div class="card-section-header">
+                <span class="card-section-title">💵 Card Costs</span>
+                <span class="pill" id="edit-total-cost-display">Total: $0.00</span>
+              </div>
+              <div class="compact-grid compact-grid-3">
+                <div class="form-field">
+                  <label for="edit-acq-cost">Acquisition ($) <span class="info-tip" data-tip="What you paid for the raw card.">ⓘ</span></label>
+                  <input type="number" step="0.01" min="0" id="edit-acq-cost" class="cost-input" placeholder="0.00" />
+                </div>
+                <div class="form-field">
+                  <label for="edit-grade-cost">Grading ($) <span class="info-tip" data-tip="Grading service fee for this card.">ⓘ</span></label>
+                  <input type="number" step="0.01" min="0" id="edit-grade-cost" class="cost-input" placeholder="0.00" />
+                </div>
+                <div class="form-field">
+                  <label for="edit-ship-cost">Shipping ($) <span class="info-tip" data-tip="Inbound/outbound shipping and insurance cost allocated to this card.">ⓘ</span></label>
+                  <input type="number" step="0.01" min="0" id="edit-ship-cost" class="cost-input" placeholder="0.00" />
+                </div>
+              </div>
+            </div>
+
+            <div class="card-section">
+              <div class="card-section-header">
+                <span class="card-section-title">🔍 Grade Predictions (1.0 – 10.0) <span class="info-tip" data-tip="Your pre-grading estimates for overall grade and subgrades.">ⓘ</span></span>
+              </div>
+              <div class="compact-grid compact-grid-5">
+                <div class="form-field">
+                  <label for="edit-pred-overall">Overall</label>
+                  <input type="text" id="edit-pred-overall" placeholder="10" />
+                </div>
+                <div class="form-field">
+                  <label for="edit-pred-corners">Corners</label>
+                  <input type="number" step="0.5" min="1" max="10" id="edit-pred-corners" placeholder="9.5" />
+                </div>
+                <div class="form-field">
+                  <label for="edit-pred-edges">Edges</label>
+                  <input type="number" step="0.5" min="1" max="10" id="edit-pred-edges" placeholder="9.5" />
+                </div>
+                <div class="form-field">
+                  <label for="edit-pred-centering">Centering</label>
+                  <input type="number" step="0.5" min="1" max="10" id="edit-pred-centering" placeholder="9.5" />
+                </div>
+                <div class="form-field">
+                  <label for="edit-pred-surface">Surface</label>
+                  <input type="number" step="0.5" min="1" max="10" id="edit-pred-surface" placeholder="9.5" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 4: Market Values, Sale & Profit -->
+          <div class="card-section">
+            <div class="card-section-header">
+              <span class="card-section-title">📈 Market Value, Sale &amp; Profit</span>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <span id="market-fetch-status" class="muted" style="font-size:12px;"></span>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-pull-value">💲 Pull Market Value</button><span class="info-tip" data-tip="Look up current graded value on PriceCharting matching this grader and grade.">ⓘ</span>
+              </div>
+            </div>
+            <div class="compact-grid compact-grid-3">
+              <div class="form-field">
+                <label for="edit-initial-graded-value">Value at Grading ($) <span class="info-tip" data-tip="Manual baseline value when the card finished grading (never auto-overwritten).">ⓘ</span></label>
+                <input type="number" step="0.01" min="0" id="edit-initial-graded-value" class="cost-input" placeholder="Manual baseline" />
+              </div>
+              <div class="form-field">
+                <label for="edit-market-value">Current Market Value ($) <span class="info-tip" data-tip="Latest market value pulled from PriceCharting or CSV.">ⓘ</span></label>
+                <input type="number" step="0.01" min="0" id="edit-market-value" class="cost-input" placeholder="Pull or enter" />
+              </div>
+              <div class="form-field">
+                <label>Est. Profit (Unsold / Hold)</label>
+                <div class="computed-box compact-computed" id="edit-unrealized-display">—</div>
+              </div>
+            </div>
+            <div class="compact-grid compact-grid-4" style="margin-top:10px;">
+              <div class="form-field">
+                <label for="edit-sold-price">Sold Price ($) <span class="info-tip" data-tip="Final sale price; entering a value automatically marks the card Sold.">ⓘ</span></label>
+                <input type="number" step="0.01" min="0" id="edit-sold-price" class="cost-input" placeholder="If sold" />
+              </div>
+              <div class="form-field">
+                <label for="edit-selling-fees">Fees / Ship ($) <span class="info-tip" data-tip="Marketplace fees and outbound shipping subtracted from Sold Net Profit.">ⓘ</span></label>
+                <input type="number" step="0.01" min="0" id="edit-selling-fees" class="cost-input" placeholder="0.00" />
+              </div>
+              <div class="form-field">
+                <label for="edit-sold-date">Sold Date</label>
+                <input type="date" id="edit-sold-date" />
+              </div>
+              <div class="form-field">
+                <label>Net Profit (Sold)</label>
+                <div class="computed-box compact-computed" id="edit-profit-display">—</div>
+              </div>
+            </div>
+            <div class="form-field" style="margin-top:10px;">
+              <label for="edit-pc-url">Manual Pricing Link (PriceCharting / TCGplayer) <span class="info-tip" data-tip="Paste a PriceCharting or TCGplayer URL to pull Market Value without touching Cert # or photos, or click Open Link to view it directly.">ⓘ</span></label>
+              <div class="input-with-link">
+                <input type="url" id="edit-pc-url" placeholder="https://www.pricecharting.com/... or https://www.tcgplayer.com/product/..." />
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-pull-pc-url">🔗 Pull Price</button>
+                <a id="link-pc-url" class="btn btn-secondary btn-sm" target="_blank" rel="noopener noreferrer" style="display:none;">Open Link ↗</a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 5: Notes -->
+          <div class="card-section">
+            <div class="card-section-header">
+              <span class="card-section-title">📝 Card Notes</span>
+            </div>
+            <div class="form-field">
+              <textarea id="edit-notes" rows="2" placeholder="Condition notes, print lines, centering, etc."></textarea>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Card Changes</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- 3D Spin / Flip Card Lightbox -->
+  <div id="lightbox" class="lightbox" style="display:none;">
+    <button class="lightbox-close" id="lightbox-close">✕</button>
+    <div class="lightbox-stage">
+      <div class="lightbox-controls">
+        <span class="pill" id="lightbox-side-label">Front</span>
+        <button type="button" class="btn btn-primary btn-sm" id="btn-spin-card">↻ Spin / Flip</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-out" title="Zoom Out">🔍−</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-reset" title="Reset Zoom">100%</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-zoom-in" title="Zoom In">🔍+</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-lightbox-open-file" style="display:none;">🖼 Open File</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-lightbox-open-folder" style="display:none;">📂 Open Folder</button>
+      </div>
+      <div class="card-3d-scene" id="card-3d-scene" title="Click card to spin">
+        <div class="card-3d-inner" id="card-3d-inner">
+          <div class="card-3d-face card-3d-front">
+            <img id="lightbox-front-img" alt="Card Front" />
+            <div class="card-3d-missing" id="lightbox-front-missing" style="display:none;">No Front Image</div>
+          </div>
+          <div class="card-3d-face card-3d-back">
+            <img id="lightbox-back-img" alt="Card Back" />
+            <div class="card-3d-missing" id="lightbox-back-missing" style="display:none;">No Back Image Uploaded</div>
+          </div>
+        </div>
+      </div>
+      <div class="muted" style="font-size:12px;">Scroll wheel or +/− to zoom • Drag to pan when zoomed • Space or Spin to flip</div>
+    </div>
+  </div>
+
+  <!-- Share Stats Infographic Modal -->
+  <div id="share-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card modal-wide">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3 id="share-modal-title">Share Stats</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-share">✕</button>
+      </div>
+      <div class="share-preview-box">
+        <img id="share-preview-img" alt="Generated Infographic" />
+      </div>
+      <div class="form-actions" style="margin-top:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div id="share-theme-swatches" class="share-theme-swatches" title="Change infographic theme colors only">
+          <button type="button" class="share-theme-btn" data-share-theme="water" title="Water Theme" style="background:#0ea5e9;">💧</button>
+          <button type="button" class="share-theme-btn" data-share-theme="fire" title="Fire Theme" style="background:#ef4444;">🔥</button>
+          <button type="button" class="share-theme-btn" data-share-theme="grass" title="Grass Theme" style="background:#10b981;">🌿</button>
+          <button type="button" class="share-theme-btn" data-share-theme="lightning" title="Lightning Theme" style="background:#eab308;">⚡</button>
+          <button type="button" class="share-theme-btn" data-share-theme="psychic" title="Psychic Theme" style="background:#a855f7;">🔮</button>
+          <button type="button" class="share-theme-btn" data-share-theme="fighting" title="Fighting Theme" style="background:#ea580c;">🥊</button>
+          <button type="button" class="share-theme-btn" data-share-theme="dark" title="Dark Theme" style="background:#1e293b;">🌙</button>
+          <button type="button" class="share-theme-btn" data-share-theme="light" title="Steel Blue Theme" style="background:#3b82f6;">❄️</button>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-left:auto;">
+          <button type="button" class="btn btn-secondary" id="btn-copy-infographic">📋 Copy Image</button>
+          <a id="btn-download-infographic" class="btn btn-primary" download="tcg_stats.png" href="#">⬇ Download PNG</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Excel Import Modal -->
+  <div id="import-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3>Import Grading Spreadsheet (.xlsx)</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-import">✕</button>
+      </div>
+      <p class="muted" style="margin-top:0;">
+        Upload your Excel workbook (such as <code>Grading Records.xlsx</code>). Sheets are automatically grouped by Shipped Date into submissions, with costs, grades, certs, and sold prices imported locally.
+      </p>
+      <form id="import-excel-form" class="form-grid" style="grid-template-columns: 1fr;">
+        <div class="form-field">
+          <label for="import-file">Select Excel File (.xlsx) *</label>
+          <div class="dropzone" data-input="import-file">
+            <div class="dropzone-hint">Drag &amp; drop .xlsx file here or click to choose</div>
+            <input type="file" id="import-file" accept=".xlsx,.xlsm" required />
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="import-fanatics-company">Default Grader for "Fanatics" Sheet</label>
+          <select id="import-fanatics-company">
+            <option value="CGC">CGC (e.g., Pristine 10 / 10)</option>
+            <option value="PSA">PSA</option>
+            <option value="Beckett">Beckett</option>
+              <option value="TAG">TAG</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-import">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-import">Import Submissions</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Settings / Theme Modal -->
+  <div id="settings-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card theme-modal-card">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3>Vault Theme</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-settings">✕</button>
+      </div>
+      <p class="muted" style="margin-top:0;">Pick a theme to apply immediately (saved locally in your browser).</p>
+      <div class="theme-grid" id="theme-grid">
+        <button type="button" class="theme-option" data-theme-choice="light"><span class="theme-emoji">☀️</span><span>Light Mode</span></button>
+        <button type="button" class="theme-option" data-theme-choice="dark"><span class="theme-emoji">🌙</span><span>Dark Mode</span></button>
+        <button type="button" class="theme-option" data-theme-choice="fire"><span class="theme-emoji">🔥</span><span>Fire</span></button>
+        <button type="button" class="theme-option" data-theme-choice="water"><span class="theme-emoji">💧</span><span>Water</span></button>
+        <button type="button" class="theme-option" data-theme-choice="fighting"><span class="theme-emoji">🥊</span><span>Fighting</span></button>
+        <button type="button" class="theme-option" data-theme-choice="psychic"><span class="theme-emoji">🔮</span><span>Psychic</span></button>
+        <button type="button" class="theme-option" data-theme-choice="grass"><span class="theme-emoji">🌿</span><span>Grass</span></button>
+        <button type="button" class="theme-option" data-theme-choice="lightning"><span class="theme-emoji">⚡</span><span>Lightning</span></button>
+        <button type="button" class="theme-option" data-theme-choice="technology"><span class="theme-emoji">🤖</span><span>Technology</span></button>
+        <button type="button" class="theme-option" data-theme-choice="christmas"><span class="theme-emoji">🎄</span><span>Christmas</span></button>
+        <button type="button" class="theme-option" data-theme-choice="newyears"><span class="theme-emoji">🎆</span><span>New Year's</span></button>
+        <button type="button" class="theme-option" data-theme-choice="july4"><span class="theme-emoji">🇺🇸</span><span>4th of July</span></button>
+        <button type="button" class="theme-option" data-theme-choice="thanksgiving"><span class="theme-emoji">🦃</span><span>Thanksgiving</span></button>
+        <button type="button" class="theme-option" data-theme-choice="halloween"><span class="theme-emoji">🎃</span><span>Halloween</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Brand / App Title & Icon Modal -->
+  <div id="brand-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3>Customize Vault Branding</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-brand">✕</button>
+      </div>
+      <form id="brand-form" class="form-grid" style="grid-template-columns:1fr;">
+        <div class="form-field">
+          <label for="brand-name-input">App / Company Title</label>
+          <input type="text" id="brand-name-input" required placeholder="TCG Grading Vault" />
+        </div>
+        <div class="form-field">
+          <label for="brand-subtitle-input">Subtitle</label>
+          <input type="text" id="brand-subtitle-input" placeholder="100% Local Storage • TCG Slab &amp; Profit Tracker" />
+        </div>
+        <div class="form-field">
+          <label for="brand-icon-file">Custom Icon / Logo (stored locally)</label>
+          <div class="dropzone" data-input="brand-icon-file">
+            <div class="dropzone-hint">Drag &amp; drop icon image here or choose file</div>
+            <input type="file" id="brand-icon-file" accept="image/*" />
+          </div>
+        </div>
+        <div class="form-actions between">
+          <button type="button" class="btn btn-ghost" id="btn-reset-brand-icon">Reset Default Icon</button>
+          <button type="submit" class="btn btn-primary">Save Branding</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Fanatics CSV Import Modal -->
+  <div id="fanatics-csv-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3>Import Fanatics Graded CSV</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-fanatics-csv">✕</button>
+      </div>
+      <p class="muted" style="margin-top:0;">
+        Upload your Fanatics CSV with columns <code>Title, Grade, CertNumber, Curated Date, Market Value</code> to automatically match and populate cards in this submission.
+      </p>
+      <form id="fanatics-csv-form" class="form-grid" style="grid-template-columns:1fr;">
+        <div class="form-field">
+          <label for="fanatics-csv-file">Select CSV File (.csv) *</label>
+          <div class="dropzone" data-input="fanatics-csv-file">
+            <div class="dropzone-hint">Drag &amp; drop .csv file here or click to choose</div>
+            <input type="file" id="fanatics-csv-file" accept=".csv,text/csv" required />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-fanatics-csv">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-fanatics-csv">Import &amp; Populate Cards</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Home Submission Outline Colors Modal -->
+  <div id="sub-colors-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3>Submission Card Outline Colors</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-sub-colors">✕</button>
+      </div>
+      <p class="muted" style="margin-top:0;">Customize the border color for each submission status on the Home page, or check <strong>No outline</strong> on any individual status.</p>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-field">
+          <label for="color-sub-completed">Completed Outline</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <input type="color" id="color-sub-completed" value="#10b981" style="height:40px;padding:4px;cursor:pointer;flex:1;" />
+            <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;white-space:nowrap;">
+              <input type="checkbox" id="no-outline-completed" style="width:15px;height:15px;" /> No outline
+            </label>
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="color-sub-partial">Partially Graded Outline</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <input type="color" id="color-sub-partial" value="#f59e0b" style="height:40px;padding:4px;cursor:pointer;flex:1;" />
+            <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;white-space:nowrap;">
+              <input type="checkbox" id="no-outline-partial" style="width:15px;height:15px;" /> No outline
+            </label>
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="color-sub-grading">In Grading Outline</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <input type="color" id="color-sub-grading" value="#3b82f6" style="height:40px;padding:4px;cursor:pointer;flex:1;" />
+            <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;white-space:nowrap;">
+              <input type="checkbox" id="no-outline-grading" style="width:15px;height:15px;" /> No outline
+            </label>
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="color-sub-notshipped">Not Shipped Outline</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <input type="color" id="color-sub-notshipped" value="#a855f7" style="height:40px;padding:4px;cursor:pointer;flex:1;" />
+            <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;white-space:nowrap;">
+              <input type="checkbox" id="no-outline-notshipped" style="width:15px;height:15px;" /> No outline
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions between" style="margin-top:16px;">
+        <button type="button" class="btn btn-ghost" id="btn-reset-sub-colors">Reset Defaults</button>
+        <button type="button" class="btn btn-primary" id="btn-save-sub-colors">Apply Colors</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Edit Cards Modal -->
+  <div id="bulk-edit-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="panel-header" style="margin-bottom:10px;">
+        <h3 id="bulk-edit-title">Bulk Edit Selected Cards</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-bulk-edit">✕</button>
+      </div>
+      <p class="muted" style="margin-top:0;font-size:13px;">Leave any field blank to keep each card's existing value.</p>
+      <form id="bulk-edit-form" class="form-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="form-field full">
+          <label for="bulk-edit-set">Set Name</label>
+          <input type="text" id="bulk-edit-set" placeholder="Leave blank to keep existing" />
+        </div>
+        <div class="form-field">
+          <label for="bulk-edit-acq">Acquisition Cost ($)</label>
+          <input type="number" step="0.01" min="0" id="bulk-edit-acq" placeholder="Leave blank to keep" />
+        </div>
+        <div class="form-field">
+          <label for="bulk-edit-grade">Grading Fee ($)</label>
+          <input type="number" step="0.01" min="0" id="bulk-edit-grade" placeholder="Leave blank to keep" />
+        </div>
+        <div class="form-field">
+          <label for="bulk-edit-ship">Shipping Cost ($)</label>
+          <input type="number" step="0.01" min="0" id="bulk-edit-ship" placeholder="Leave blank to keep" />
+        </div>
+        <div class="form-field">
+          <label for="bulk-edit-curated">Curated Date</label>
+          <input type="text" id="bulk-edit-curated" placeholder="e.g., 2026-11-23" />
+        </div>
+        <div class="form-actions full">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-bulk-edit">Cancel</button>
+          <button type="submit" class="btn btn-primary">Apply to Selected Cards</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Floating Bottom-Right Progress Widget (No Screen Blur) -->
+  <div id="import-progress-modal" class="floating-progress-card" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <strong id="imp-modal-title" style="font-size:13px;">Importing Submission...</strong>
+      <span id="imp-modal-pct" style="font-weight:700;font-size:12px;color:var(--primary);">0%</span>
+    </div>
+    <div id="imp-modal-status" class="muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Preparing cards...</div>
+    <div class="progress-track" style="height:8px;margin:8px 0 10px 0;">
+      <div class="progress-seg seg-graded" id="imp-modal-bar" style="width:0%;"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button type="button" class="btn btn-danger btn-sm" id="btn-cancel-import-modal" style="padding:3px 10px;font-size:11px;">✕ Cancel</button>
+    </div>
+  </div>
+
+  <!-- eBay Paid & Shipped Sales Review Modal (Zero PII) -->
+  <div id="ebay-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card ebay-modal-card">
+      <div class="ebay-modal-header">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <svg width="64" height="25" viewBox="0 0 120 46" aria-label="eBay">
+            <text x="2" y="34" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="36" letter-spacing="-2">
+              <tspan fill="#e53238">e</tspan><tspan fill="#0064d2">b</tspan><tspan fill="#f5af02">a</tspan><tspan fill="#86b817">y</tspan>
+            </text>
+          </svg>
+          <div>
+            <h3 style="margin:0;font-size:18px;">Sales &amp; Bookkeeping Review <span class="info-tip" data-tip="Imports Sold For, Shipping, eBay Tax, Sale Date, and Order/Item # only. All buyer names, emails, addresses, and phone numbers are stripped and never stored.">ⓘ</span></h3>
+            <div class="muted" style="font-size:12px;">Review matched vault cards, pick the right submission if multiple match, and confirm before marking Sold.</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-download-ebay-bookkeeping" style="display:none;">📥 Download Clean Bookkeeping CSV</button>
+          <button class="btn btn-ghost btn-sm" id="btn-close-ebay" style="font-size:16px;">✕</button>
+        </div>
+      </div>
+      <div id="ebay-import-summary" class="ebay-modal-body"></div>
+      <div id="ebay-modal-footer" class="ebay-modal-footer" style="display:none;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:1;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;cursor:pointer;">
+            <input type="checkbox" id="ebay-create-unmatched-cb" checked style="width:16px;height:16px;cursor:pointer;" />
+            <span id="ebay-create-unmatched-label">Create an "eBay Sales" submission with unmatched / unchecked items for ROI &amp; bookkeeping</span>
+          </label>
+          <input type="text" id="ebay-sub-title-input" placeholder="Optional sub name (e.g. eBay Sales • Nov 2026)" style="max-width:260px;font-size:13px;padding:6px 10px;" />
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-ebay-apply">Cancel</button>
+          <button type="button" class="btn btn-secondary" id="btn-ebay-import-no-sold" title="Import all eBay sales into an eBay Sales bookkeeping sub without marking any matched vault cards Sold">📥 Import Without Marking Sold</button><span class="info-tip" data-tip="Creates an eBay Sales bookkeeping submission with all sales without marking any existing vault cards Sold.">ⓘ</span>
+          <button type="button" class="btn btn-primary" id="btn-confirm-ebay-apply">✅ Confirm &amp; Apply Updates</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move Card(s) to Submission Modal -->
+  <div id="move-card-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3 id="move-modal-title">Move Card to Submission</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-move-modal">✕</button>
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr;">
+        <div class="form-field">
+          <label for="move-modal-select">Destination Submission</label>
+          <select id="move-modal-select"></select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-move-modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btn-confirm-move-modal">📦 Move Card(s)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Borderless Floating Thumbnail Hover Preview -->
+  <div id="thumb-hover-preview" class="thumb-hover-preview" style="display:none;">
+    <img id="thumb-hover-img" alt="Card Preview" />
+  </div>
+
+  <!-- Edit Submission Details Modal -->
+  <div id="edit-sub-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3>Edit Submission Details</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-edit-sub">✕</button>
+      </div>
+      <form id="edit-sub-form" class="form-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="form-field full">
+          <label for="edit-sub-title-input">Submission Title *</label>
+          <input type="text" id="edit-sub-title-input" required />
+        </div>
+        <div class="form-field">
+          <label for="edit-sub-company-select">Grading Company</label>
+          <select id="edit-sub-company-select">
+            <option value="PSA">PSA</option>
+            <option value="CGC">CGC</option>
+            <option value="Beckett">Beckett</option>
+              <option value="TAG">TAG</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="edit-sub-date-input">Date Submitted</label>
+          <input type="date" id="edit-sub-date-input" />
+        </div>
+        <div class="form-field">
+          <label for="edit-sub-number-input">Order / Submission #</label>
+          <input type="text" id="edit-sub-number-input" />
+        </div>
+        <div class="form-field">
+          <label for="edit-sub-status-select">Status</label>
+          <select id="edit-sub-status-select">
+            <option value="Not Shipped">Not Shipped</option>
+            <option value="In Grading">In Grading</option>
+            <option value="Partially Graded">Partially Graded</option>
+            <option value="Completed">Completed</option>
+          </select>
+        </div>
+        <div class="form-field full">
+          <label>Submitted Via (Optional)</label>
+          <div style="display:flex;gap:16px;align-items:center;padding:6px 0;">
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">
+              <input type="checkbox" id="edit-sub-ch-fanatics" class="edit-channel-cb" value="Fanatics" style="width:15px;height:15px;" />
+              <span>Fanatics</span>
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">
+              <input type="checkbox" id="edit-sub-ch-gamestop" class="edit-channel-cb" value="GameStop" style="width:15px;height:15px;" />
+              <span>GameStop</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-field full">
+          <label for="edit-sub-notes-input">Notes</label>
+          <input type="text" id="edit-sub-notes-input" />
+        </div>
+        <div class="form-actions full">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-edit-sub">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Submission Info</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Single-Session Fanatics Collection Sync Modal -->
+  <div id="fanatics-col-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3>Sync Fanatics Links &amp; High-Res Photos</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-fanatics-col">✕</button>
+      </div>
+      <p class="muted" style="margin-top:0;">
+        Opens your Fanatics Collection once in your local Vault browser, captures the single internal API response (zero page-by-page clicking), and matches <code>/collection/i/&lt;uuid&gt;</code> links &amp; high-res slab scans to your cards by Cert #.
+      </p>
+      <form id="fanatics-col-form" class="form-grid" style="grid-template-columns:1fr;">
+        <div class="form-field">
+          <label for="fanatics-col-url">Fanatics Collection URL</label>
+          <input type="url" id="fanatics-col-url" value="https://www.fanaticscollect.com/collection" required />
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+          <input type="checkbox" id="fanatics-col-force" checked />
+          <span>Overwrite existing cert images with high-res Fanatics scans</span>
+        </label>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-fanatics-col">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-fanatics-col">🔗 Sync Links &amp; Photos</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Context-Aware How-To Guide Modal (Matches Active Theme) -->
+  <div id="help-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card modal-wide help-modal-card">
+      <div class="panel-header" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="badge badge-PSA" style="background:var(--primary);color:#fff;">GUIDE</span>
+          <h3 style="margin:0;">How To Use TCG Grading Vault</h3>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="btn-close-help">✕</button>
+      </div>
+      <div class="filter-pills-row" id="help-tabs" style="margin-bottom:14px;">
+        <button type="button" class="filter-pill active" data-help-tab="view-home">🏠 Home Dashboard</button>
+        <button type="button" class="filter-pill" data-help-tab="view-wizard">➕ New Submission</button>
+        <button type="button" class="filter-pill" data-help-tab="view-submission">📋 Submission Detail</button>
+        <button type="button" class="filter-pill" data-help-tab="view-card">🃏 Card Detail</button>
+        <button type="button" class="filter-pill" data-help-tab="features">✨ All Features</button>
+        <button type="button" class="filter-pill" data-help-tab="versions">📋 Versions</button>
+      </div>
+      <div id="help-body" class="help-body"></div>
+      <div class="form-actions" style="margin-top:16px;">
+        <button type="button" class="btn btn-primary" id="btn-done-help">Got It</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <!-- Collectr Export Modal -->
+  <div id="collectr-export-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card modal-wide">
+      <div class="panel-header" style="margin-bottom:10px;">
+        <div>
+          <h3 style="margin:0;">📋 Export Submission for Collectr</h3>
+          <div class="muted" style="font-size:12px;">TCGplayer / Collectr-compatible columns (send CSV to <code>import@getcollectr.com</code> or import directly).</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="btn-close-collectr">✕</button>
+      </div>
+      <textarea id="collectr-export-preview" readonly rows="13" style="width:100%;font-family:monospace;font-size:12px;line-height:1.45;white-space:pre;overflow:auto;"></textarea>
+      <div class="form-actions" style="margin-top:14px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary" id="btn-copy-collectr-csv">📋 Copy CSV</button>
+        <button type="button" class="btn btn-secondary" id="btn-download-collectr-txt">📄 Download .TXT</button>
+        <button type="button" class="btn btn-primary" id="btn-download-collectr-csv">📥 Download .CSV</button>
+      </div>
+    </div>
+  </div>
+
+
+  <footer class="app-footer">
+    <span>TCG Grading Vault • <strong>v0.73</strong></span>
+    <button type="button" class="btn btn-ghost btn-sm" id="btn-open-about" style="font-size:12px;">👤 About &amp; Contact</button>
+  </footer>
+
+  <!-- About & Contact Modal -->
+  <div id="about-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card" style="max-width:480px;">
+      <div class="panel-header" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="badge badge-PSA" style="background:var(--primary);color:#fff;">v0.73</span>
+          <h3 style="margin:0;">TCG Grading Vault</h3>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="btn-close-about">✕</button>
+      </div>
+      <p style="margin-top:0;font-size:13.5px;line-height:1.5;">
+        100% local TCG grading, cert scan, market value, and eBay bookkeeping tracker built for collectors and graders.
+      </p>
+      <div class="card-section" style="margin:12px 0;padding:12px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:6px;">Creator &amp; Contact Info</div>
+        <div style="font-size:13px;line-height:1.7;">
+          <div>📧 Email: <a href="mailto:Cellbinefiles@gmail.com" style="color:var(--primary);font-weight:600;">Cellbinefiles@gmail.com</a></div>
+          <div>💬 Discord: <strong>@dots0576</strong></div>
+          <div>🏷️ Current Release: <strong>v0.73</strong> <span class="muted">(Pre-release • v1.0 coming on broader release)</span></div>
+        </div>
+      </div>
+      <div class="form-actions" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px;">
+        <button type="button" class="btn btn-secondary" id="btn-about-versions">📋 View Version History</button>
+        <button type="button" class="btn btn-primary" id="btn-done-about">Close</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Import Submission Bundle Modal -->
+  <div id="import-bundle-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card" style="max-width:560px;">
+      <div class="panel-header" style="margin-bottom:10px;">
+        <div>
+          <h3 style="margin:0;">📥 Import Submission Bundle(s)</h3>
+          <div class="muted" style="font-size:12px;">Select one or more exported <code>*_sub.zip</code> files to copy into <code>data/shared_submissions/</code> and add to your vault.</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="btn-close-import-bundle">✕</button>
+      </div>
+      <div class="card-section" style="margin:10px 0;padding:12px;">
+        <div style="font-size:12.5px;margin-bottom:8px;">
+          <strong>Auto-Drop Folder:</strong> Any <code>.zip</code> bundle or submission folder pasted into<br/>
+          <code id="shared-subs-folder-path" style="font-size:11.5px;word-break:break-all;">data/shared_submissions</code>
+          is automatically imported on Home load.
+        </div>
+        <input type="file" id="import-bundle-files" accept=".zip" multiple />
+      </div>
+      <div class="form-actions" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary" id="btn-sync-shared-folder">🔄 Sync Folder Now</button>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-import-bundle">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btn-confirm-import-bundle">📥 Import Selected</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/static/app.js?v=73"></script>
+</body>
+</html>
