@@ -7,7 +7,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-APP_VERSION = "0.73"
+APP_VERSION = "0.91"
 SOURCE_DIR = Path(__file__).resolve().parent
 ICON_NAME = "static/vault.ico"
 
@@ -516,10 +516,40 @@ class InstallerWizard:
         return proc.wait()
 
     def copy_app_to_target(self, target_dir: Path):
+        import stat
         if target_dir.resolve() == SOURCE_DIR.resolve():
             return
         target_dir.mkdir(parents=True, exist_ok=True)
         self.log(f"Copying app files to {target_dir}...")
+
+        def _force_copy(src_file, dst_file):
+            src_p = Path(src_file)
+            dst_p = Path(dst_file)
+            if dst_p.exists():
+                try:
+                    os.chmod(dst_p, stat.S_IWRITE | stat.S_IREAD)
+                except Exception:
+                    pass
+            try:
+                shutil.copy2(src_p, dst_p)
+            except PermissionError:
+                if os.name == "nt":
+                    subprocess.run(
+                        ["powershell", "-NoProfile", "-Command",
+                         f'Get-Process python,pythonw -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -like "{target_dir}*" }} | Stop-Process -Force'],
+                        capture_output=True,
+                        creationflags=0x08000000,
+                    )
+                    import time as _t
+                    _t.sleep(0.6)
+                    try:
+                        os.chmod(dst_p, stat.S_IWRITE | stat.S_IREAD)
+                    except Exception:
+                        pass
+                    shutil.copy2(src_p, dst_p)
+                else:
+                    raise
+
         for item in SOURCE_DIR.iterdir():
             if item.name in (".venv", "__pycache__", ".git"):
                 continue
@@ -528,9 +558,9 @@ class InstallerWizard:
                 self.log("Existing data/ folder detected — preserving database and scans!")
                 continue
             if item.is_dir():
-                shutil.copytree(item, dest, dirs_exist_ok=True)
+                shutil.copytree(item, dest, dirs_exist_ok=True, copy_function=_force_copy)
             else:
-                shutil.copy2(item, dest)
+                _force_copy(item, dest)
 
     def start_install(self):
         if self.running:

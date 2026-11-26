@@ -256,6 +256,13 @@ const PAGE_HELP_CONTENT = {
   ],
   "versions": [
     {
+      title: "v0.80 — Live Auction Monitor, Streamer Showcase, Multi-Card Share, In-App Tabs & Updates",
+      items: [
+        "Added Live Auction Monitor (🔨 Auctions) for eBay & Fanatics Collect with 60s auto-refresh, card size slider, split-screen listing viewer, HTML+photo report download, and 1-click Match & Mark Sold into your vault.",
+        "Added Streamer Showcase mode & Bulk Actions Share Graphic for multi-card presentations, In-App Tabbed Browser Drawer for cert/price links, GitHub Check for Updates, Home/End + Back to Top navigation, and responsive auto-fit card columns.",
+      ],
+    },
+    {
       title: "v0.70 — Portfolio Card Values, Collectr Export, Windows Setup Wizard & Submission Sharing",
       items: [
         "Added Total Card Values (graded value or acquisition cost), Realized/Unrealized Profit on Home, and Sold Price on card tiles.",
@@ -298,7 +305,13 @@ function renderHelpTab(tabId) {
   });
   const body = $("help-body");
   if (!body) return;
-  body.innerHTML = PAGE_HELP_CONTENT[active]
+  const welcomeToggleHtml = active === "versions"
+    ? `<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;margin-bottom:12px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border);cursor:pointer;font-size:13px;">
+        <input type="checkbox" id="howto-show-welcome-cb" ${localStorage.getItem("tcg_vault_welcome_disabled") !== "1" ? "checked" : ""} />
+        <span>Show "What's New" welcome popup when a new update is launched for the first time</span>
+      </label>`
+    : "";
+  body.innerHTML = welcomeToggleHtml + PAGE_HELP_CONTENT[active]
     .map(
       (sec) => `
       <div class="help-card">
@@ -308,6 +321,13 @@ function renderHelpTab(tabId) {
     `
     )
     .join("");
+  const wCb = $("howto-show-welcome-cb");
+  if (wCb) {
+    wCb.addEventListener("change", () => {
+      localStorage.setItem("tcg_vault_welcome_disabled", wCb.checked ? "0" : "1");
+      showToast(wCb.checked ? "Welcome popup enabled for future updates." : "Welcome popup disabled.");
+    });
+  }
 }
 
 function applyTheme(themeName) {
@@ -367,6 +387,7 @@ function switchView(viewId, historyPayload = null, pushHistory = true, scrollMod
   if (state.currentView && state.currentView !== viewId) {
     state.scrollPositions[state.currentView] = window.scrollY || 0;
   }
+  if (viewId !== "view-auctions" && aucTimerHandle) { clearInterval(aucTimerHandle); aucTimerHandle = null; }
   state.currentView = viewId;
   if ($("thumb-hover-preview")) $("thumb-hover-preview").style.display = "none";
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
@@ -433,36 +454,331 @@ function renderTopSlabShowcase(top) {
 
   body.innerHTML = `
     ${thumbHtml}
-    <div class="showcase-info">
-      <div class="showcase-title">${escapeHtml(top.card_name)}</div>
-      <div class="showcase-sub">${escapeHtml(top.submission_title)}${top.cert_number ? ` • Cert #${escapeHtml(top.cert_number)}` : ""}</div>
-      <div class="showcase-profit">+${fmtMoney(top.profit)}</div>
-      <div class="showcase-meta">${top.is_sold ? "Sold" : "Held • Graded Val"} ${fmtMoney(top.sold_price)} • Cost ${fmtMoney(top.total_cost)} • ROI +${top.roi_pct}%</div>
+    <div class="showcase-info" style="display:flex;flex-direction:column;justify-content:space-between;gap:8px;min-height:210px;padding:6px 0;flex:1;">
+      <div>
+        <div class="showcase-title" style="font-size:21px;line-height:1.2;">${escapeHtml(top.card_name)}</div>
+        <div class="showcase-sub" style="font-size:13px;margin-top:4px;">${escapeHtml(top.submission_title)}${top.cert_number ? ` • Cert #${escapeHtml(top.cert_number)}` : ""}</div>
+      </div>
+      <div style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.45);border-radius:10px;padding:10px 14px;">
+        <div style="font-size:10.5px;font-weight:800;letter-spacing:0.5px;color:var(--muted);">${top.is_sold ? "REALIZED PROFIT" : "ESTIMATED PROFIT"}</div>
+        <div class="showcase-profit" style="font-size:30px;">+${fmtMoney(top.profit)}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;">
+        <span class="pill">${top.is_sold ? "Sold" : "Graded Val"}: <strong>${fmtMoney(top.sold_price)}</strong></span>
+        <span class="pill">Cost: <strong>${fmtMoney(top.total_cost)}</strong></span>
+        <span class="pill pill-gem">ROI: <strong>+${top.roi_pct}%</strong></span>
+      </div>
     </div>
   `;
   showcaseEl.onclick = () => openCardDetail(top.id);
 }
 
 /* ---------------- SHARE STATS INFOGRAPHIC ---------------- */
-function setInfographicTheme(themeName) {
-  if (!state._shareBaseUrl) return;
+async function setInfographicTheme(themeName) {
   const th = themeName || getTheme();
   state._shareTheme = th;
+  document.querySelectorAll("[data-share-theme]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.shareTheme === th);
+  });
+  if (state._shareCardIds && state._shareCardIds.length) {
+    try {
+      const resp = await fetch("/api/infographic/cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ card_ids: state._shareCardIds, theme: th, title: state._shareMultiTitle || "Selected Cards Showcase" }),
+      });
+      const blob = await resp.blob();
+      const objUrl = URL.createObjectURL(blob);
+      $("share-preview-img").src = objUrl;
+      $("btn-download-infographic").href = objUrl;
+    } catch (_) {}
+    return;
+  }
+  if (!state._shareBaseUrl) return;
   const sep = state._shareBaseUrl.includes("?") ? "&" : "?";
   const fullUrl = `${state._shareBaseUrl}${sep}theme=${encodeURIComponent(th)}&t=${Date.now()}`;
   $("share-preview-img").src = fullUrl;
   $("btn-download-infographic").href = fullUrl;
-  document.querySelectorAll("[data-share-theme]").forEach((b) => {
-    b.classList.toggle("active", b.dataset.shareTheme === th);
-  });
 }
 
-function openInfographicModal(url, title, filename) {
+function openInfographicModal(url, title, filename, cardIds = null) {
   state._shareBaseUrl = url;
+  state._shareCardIds = cardIds;
+  state._shareMultiTitle = title;
   $("share-modal-title").textContent = title;
   $("btn-download-infographic").download = filename;
   setInfographicTheme(getTheme());
   $("share-modal").style.display = "flex";
+}
+
+
+
+/* ---------------- v0.80: IN-APP TABS, SHOWCASE, UPDATES, AUCTIONS & SCROLL ---------------- */
+const inAppTabs = [];
+let activeInAppTabIdx = -1;
+
+function renderInAppTabs() {
+  const drawer = $("inapp-tab-drawer");
+  const listEl = $("inapp-tabs-list");
+  const iframe = $("inapp-tab-iframe");
+  const popout = $("inapp-popout-link");
+  if (!drawer || !listEl || !iframe) return;
+  if (!inAppTabs.length) {
+    drawer.style.display = "none";
+    iframe.src = "about:blank";
+    return;
+  }
+  drawer.style.display = "flex";
+  if (activeInAppTabIdx < 0 || activeInAppTabIdx >= inAppTabs.length) {
+    activeInAppTabIdx = inAppTabs.length - 1;
+  }
+  const cur = inAppTabs[activeInAppTabIdx];
+  listEl.innerHTML = inAppTabs.map((t, idx) => `
+    <span class="inapp-tab-pill ${idx === activeInAppTabIdx ? "active" : ""}" data-tab-idx="${idx}">
+      <span>${escapeHtml(t.label)}</span>
+      <button type="button" data-close-tab="${idx}" style="background:none;border:none;color:inherit;cursor:pointer;padding:0;font-size:11px;">✕</button>
+    </span>
+  `).join("");
+  listEl.querySelectorAll("[data-tab-idx]").forEach((el) => {
+    el.addEventListener("click", (ev) => {
+      if (ev.target.dataset.closeTab !== undefined) return;
+      activeInAppTabIdx = Number(el.dataset.tabIdx);
+      renderInAppTabs();
+    });
+  });
+  listEl.querySelectorAll("[data-close-tab]").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const idx = Number(btn.dataset.closeTab);
+      inAppTabs.splice(idx, 1);
+      if (activeInAppTabIdx >= inAppTabs.length) activeInAppTabIdx = inAppTabs.length - 1;
+      renderInAppTabs();
+    });
+  });
+  iframe.src = `/api/proxy-preview?inline_nav=1&url=${encodeURIComponent(cur.url)}`;
+  if (popout) popout.href = cur.url;
+}
+
+function openInAppTab(url, label = "External View") {
+  if (!url || !url.startsWith("http")) return;
+  const existingIdx = inAppTabs.findIndex((t) => t.url === url);
+  if (existingIdx >= 0) {
+    activeInAppTabIdx = existingIdx;
+  } else {
+    inAppTabs.push({ url, label: label.slice(0, 26) });
+    activeInAppTabIdx = inAppTabs.length - 1;
+  }
+  renderInAppTabs();
+}
+
+let showcaseCards = [];
+let showcaseIdx = 0;
+let showcaseBack = false;
+let showcaseGridMode = false;
+
+function renderStreamerShowcase() {
+  const stage = $("showcase-stage");
+  const counter = $("showcase-counter");
+  const navBar = $("showcase-nav-bar");
+  const modeBtn = $("btn-showcase-mode-toggle");
+  if (!stage || !showcaseCards.length) return;
+  if (modeBtn) modeBtn.textContent = showcaseGridMode ? "🎯 Spotlight View" : "⊞ Grid View";
+  if (navBar) navBar.style.display = showcaseGridMode ? "none" : "flex";
+
+  if (showcaseGridMode) {
+    stage.innerHTML = `<div class="showcase-grid">${showcaseCards.map((c, idx) => {
+      const img = showcaseBack ? (c.cert_back_image || c.raw_back_image || c.cert_front_image || c.raw_front_image) : (c.cert_front_image || c.raw_front_image || c.cert_back_image);
+      const val = c.status === "Sold" && c.sold_price != null ? c.sold_price : c.market_value;
+      return `<div class="panel" style="padding:12px;cursor:pointer;" data-spot-idx="${idx}">
+        ${img ? `<img src="${resolveImgSrc(img)}" style="width:100%;height:210px;object-fit:contain;" />` : `<div class="muted" style="height:210px;display:flex;align-items:center;justify-content:center;">No Scan</div>`}
+        <div style="font-weight:800;font-size:14px;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.card_name)}</div>
+        <div class="muted" style="font-size:12px;">${escapeHtml(c.actual_grade ? "Grade " + c.actual_grade : c.status)} ${c.cert_number ? "• #" + escapeHtml(c.cert_number) : ""}</div>
+        <div style="font-size:15px;font-weight:800;color:var(--green,#10b981);margin-top:4px;">${val != null ? fmtMoney(val) : "Cost " + fmtMoney(c.total_cost)}</div>
+      </div>`;
+    }).join("")}</div>`;
+    stage.querySelectorAll("[data-spot-idx]").forEach((el) => {
+      el.addEventListener("click", () => {
+        showcaseIdx = Number(el.dataset.spotIdx);
+        showcaseGridMode = false;
+        renderStreamerShowcase();
+      });
+    });
+    return;
+  }
+
+  const c = showcaseCards[showcaseIdx];
+  if (counter) counter.textContent = `${showcaseIdx + 1} / ${showcaseCards.length}`;
+  const img = showcaseBack
+    ? (c.cert_back_image || c.raw_back_image || c.cert_front_image || c.raw_front_image)
+    : (c.cert_front_image || c.raw_front_image || c.cert_back_image);
+  const val = c.status === "Sold" && c.sold_price != null ? c.sold_price : c.market_value;
+  const prof = c.profit != null ? c.profit : c.est_profit;
+  stage.innerHTML = `
+    <div class="showcase-spotlight">
+      <div style="text-align:center;">
+        ${img ? `<img src="${resolveImgSrc(img)}" alt="${escapeHtml(c.card_name)}" />` : `<div class="muted" style="height:360px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);border-radius:12px;">No Scan</div>`}
+      </div>
+      <div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          ${c.submission_company ? `<span class="badge badge-${escapeHtml(c.submission_company)}">${escapeHtml(c.submission_company)}</span>` : ""}
+          ${c.actual_grade ? `<span class="pill pill-gem" style="font-size:14px;">Grade ${escapeHtml(c.actual_grade)}</span>` : ""}
+          ${c.cert_number ? `<span class="pill">Cert #${escapeHtml(c.cert_number)}</span>` : ""}
+          <span class="pill">${escapeHtml(c.status)}</span>
+        </div>
+        <h2 style="font-size:28px;margin:0 0 6px;">${escapeHtml(c.card_name)}</h2>
+        <div class="muted" style="font-size:15px;margin-bottom:18px;">${escapeHtml([c.card_year, c.set_name, c.card_number ? "#" + c.card_number : ""].filter(Boolean).join(" • "))}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">
+          <div class="stat-card"><div class="stat-label">Total Cost</div><div class="stat-value">${fmtMoney(c.total_cost)}</div></div>
+          <div class="stat-card stat-blue"><div class="stat-label">${c.status === "Sold" ? "Sold Price" : "Market Value"}</div><div class="stat-value accent-blue">${val != null ? fmtMoney(val) : "—"}</div></div>
+          <div class="stat-card stat-profit"><div class="stat-label">${c.status === "Sold" ? "Realized Profit" : "Est. Profit"}</div><div class="stat-value ${prof != null && prof < 0 ? "profit-neg" : "profit-pos"}">${prof != null ? fmtMoney(prof) : "—"}</div></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function openStreamerShowcase(cards, title = "Card Spotlight") {
+  if (!cards || !cards.length) { showToast("Select at least one card first."); return; }
+  showcaseCards = cards;
+  showcaseIdx = 0;
+  showcaseBack = false;
+  showcaseGridMode = cards.length > 1;
+  $("showcase-modal-title").textContent = title;
+  renderStreamerShowcase();
+  $("showcase-modal").style.display = "flex";
+}
+
+let auctionsCache = [];
+let selectedAuctionId = null;
+let aucCountdown = 60;
+let aucTimerHandle = null;
+let linkTargetAuction = null;
+
+function renderAuctionsGrid() {
+  const grid = $("auctions-grid");
+  if (!grid) return;
+  const totalItems = auctionsCache.length;
+  const endedRows = auctionsCache.filter((a) => a.status === "Ended");
+  const totalCost = auctionsCache.reduce((s, a) => s + Number(a.cost || 0), 0);
+  const combinedBids = auctionsCache.reduce((s, a) => s + Number(a.final_price != null ? a.final_price : (a.current_bid || 0)), 0);
+  const soldTotal = endedRows.reduce((s, a) => s + Number(a.final_price != null ? a.final_price : (a.current_bid || 0)), 0);
+
+  if ($("auc-count-sub")) $("auc-count-sub").textContent = `${totalItems} listing${totalItems === 1 ? "" : "s"} tracked`;
+  if ($("auc-total-cost")) $("auc-total-cost").textContent = fmtMoney(totalCost);
+  if ($("auc-combined-bids")) $("auc-combined-bids").textContent = fmtMoney(combinedBids);
+  if ($("auc-sold-summary")) $("auc-sold-summary").textContent = `${endedRows.length} • ${fmtMoney(soldTotal)}`;
+
+  if (!auctionsCache.length) {
+    grid.innerHTML = `<div class="panel" style="grid-column:1/-1;text-align:center;padding:30px;">No auctions tracked yet. Click <strong>➕ Add Auction Link(s)</strong> to monitor eBay or Fanatics Collect listings!</div>`;
+    return;
+  }
+
+  grid.innerHTML = auctionsCache.map((a) => {
+    const val = a.final_price != null ? a.final_price : (a.current_bid || 0);
+    const isEnded = a.status === "Ended";
+    return `
+      <div class="auction-card ${a.id === selectedAuctionId ? "is-selected" : ""}" data-auc-id="${a.id}">
+        <div class="auction-card-img-col">
+          ${a.image_url ? `<img class="auction-card-img" src="${escapeHtml(a.image_url)}" alt="${escapeHtml(a.title)}" />` : `<div class="muted" style="height:190px;display:flex;align-items:center;justify-content:center;">No Image</div>`}
+        </div>
+        <div class="auction-card-info-col">
+          <div>
+            <div class="auction-card-title" title="${escapeHtml(a.title)}">${escapeHtml(a.title || a.url)}</div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px;">
+              <span class="badge ${a.platform === "Fanatics" ? "badge-CGC" : "badge-PSA"}" style="font-size:calc(10px * var(--auc-scale, 1));">${escapeHtml(a.platform)}</span>
+              <span class="muted" style="font-size:calc(11px * var(--auc-scale, 1));">${isEnded ? "ENDED" : escapeHtml(a.time_left || "Active")} • ${a.bid_count || 0} bids</span>
+            </div>
+          </div>
+          <div style="font-size:calc(11px * var(--auc-scale, 1));color:#f87171;font-weight:700;text-align:center;">COST ${fmtMoney(a.cost || 0)}</div>
+          <div class="auction-bid-box">
+            <div style="font-size:calc(9.5px * var(--auc-scale, 1));font-weight:800;color:${isEnded ? "var(--green,#10b981)" : "var(--muted)"};">${isEnded ? "FINAL BID" : "CURRENT BID"}</div>
+            <div class="auction-bid-amount">${fmtMoney(val)}</div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
+            <button type="button" class="btn btn-secondary btn-sm" data-auc-link="${a.id}" title="Match to Vault Card & Mark Sold" style="padding:2px 7px;font-size:11px;flex:1;">🔗 Match Sold</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-auc-refresh="${a.id}" title="Refresh Now" style="padding:2px 6px;font-size:11px;">🔄</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-auc-del="${a.id}" title="Remove" style="padding:2px 6px;font-size:11px;">✕</button>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+
+  grid.querySelectorAll(".auction-card").forEach((cardEl) => {
+    cardEl.addEventListener("click", (ev) => {
+      if (ev.target.closest("button")) return;
+      const aid = Number(cardEl.dataset.aucId);
+      const auc = auctionsCache.find((x) => x.id === aid);
+      if (!auc?.url) return;
+      openExternalUrl(auc.url);
+    });
+  });
+
+  grid.querySelectorAll("[data-auc-refresh]").forEach((b) => {
+    b.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const res = await apiJson(`/api/auctions/${b.dataset.aucRefresh}/refresh`, { method: "POST" });
+      auctionsCache = auctionsCache.map((x) => (x.id === res.id ? res : x));
+      renderAuctionsGrid();
+    });
+  });
+
+  grid.querySelectorAll("[data-auc-del]").forEach((b) => {
+    b.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const aid = Number(b.dataset.aucDel);
+      await apiJson(`/api/auctions/${aid}`, { method: "DELETE" });
+      auctionsCache = auctionsCache.filter((x) => x.id !== aid);
+      if (selectedAuctionId === aid) selectedAuctionId = null;
+      renderAuctionsGrid();
+    });
+  });
+
+  grid.querySelectorAll("[data-auc-link]").forEach((b) => {
+    b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      openLinkAuctionModal(Number(b.dataset.aucLink));
+    });
+  });
+}
+
+async function openLinkAuctionModal(auctionId) {
+  const auc = auctionsCache.find((x) => x.id === auctionId);
+  if (!auc) return;
+  linkTargetAuction = auc;
+  const price = auc.final_price != null ? auc.final_price : (auc.current_bid || 0);
+  $("link-auc-summary").textContent = `${auc.title} • Sale Price: ${fmtMoney(price)}`;
+  $("link-auc-fees").value = "0";
+  const allCards = await apiJson("/api/cards");
+  const sel = $("link-auc-card-select");
+  const renderOpts = (q = "") => {
+    const ql = q.trim().toLowerCase();
+    const list = allCards.filter((c) => !ql || `${c.card_name} ${c.cert_number} ${c.card_number} ${c.submission_title}`.toLowerCase().includes(ql));
+    sel.innerHTML = list.slice(0, 80).map((c) => `<option value="${c.id}">${escapeHtml(c.card_name)} ${c.card_number ? "#" + escapeHtml(c.card_number) : ""} (${escapeHtml(c.submission_title)} • ${escapeHtml(c.actual_grade || c.status)}${c.cert_number ? " • Cert #" + escapeHtml(c.cert_number) : ""})</option>`).join("");
+  };
+  renderOpts("");
+  $("link-auc-search").value = "";
+  $("link-auc-search").oninput = (e) => renderOpts(e.target.value);
+  $("link-auction-modal").style.display = "flex";
+}
+
+async function openAuctionsView(pushHistory = true) {
+  switchView("view-auctions", { view: "auctions", hash: "#auctions" }, pushHistory);
+  auctionsCache = await apiJson("/api/auctions");
+  renderAuctionsGrid();
+  if (!aucTimerHandle) {
+    aucTimerHandle = setInterval(async () => {
+      if (state.currentView !== "view-auctions" || !$("auc-auto-refresh-cb")?.checked) return;
+      aucCountdown -= 1;
+      if ($("auc-refresh-timer")) $("auc-refresh-timer").textContent = `(${aucCountdown}s)`;
+      if (aucCountdown <= 0) {
+        aucCountdown = 60;
+        try {
+          const r = await apiJson("/api/auctions/refresh", { method: "POST" });
+          auctionsCache = r.auctions || auctionsCache;
+          renderAuctionsGrid();
+        } catch (_) {}
+      }
+    }, 1000);
+  }
 }
 
 /* ---------------- HOME DASHBOARD ---------------- */
@@ -584,7 +900,7 @@ async function loadHome(pushHistory = true, scrollMode = "top") {
       tile.style.setProperty("--tile-outline", borderColors.notShipped);
     }
     const isListMode = (localStorage.getItem("tcg_view_mode") || "cards") === "list";
-    const thumbList = isListMode ? s.preview_images : s.preview_images.slice(0, 5);
+    const thumbList = s.preview_images;
     const thumbsHtml = thumbList.length
       ? thumbList.map((p) => `<img src="${resolveImgSrc(p)}" alt="Card" class="home-tile-thumb" />`).join("")
       : `<div class="tile-thumbs-empty">No card photos yet</div>`;
@@ -1107,21 +1423,19 @@ function renderSubmissionCards(cardsToRender) {
           ${c.cert_number ? `<span class="pill" style="border-color:var(--primary);color:var(--primary);font-weight:700;">Cert #${escapeHtml(c.cert_number)}</span>` : ""}
           ${c.curated_date ? `<span class="pill">Curated: ${escapeHtml(c.curated_date)}</span>` : ""}
         </div>
+        ${(c.status === "Sold" && c.sold_price != null) || c.market_value != null ? `
+          <div class="card-val-highlight">
+            <div style="font-size:9.5px;font-weight:800;color:var(--muted);">${c.status === "Sold" ? "SOLD PRICE" : "MARKET VALUE"}</div>
+            <div style="font-size:17px;font-weight:900;color:${c.status === "Sold" ? "var(--green, #10b981)" : "var(--primary)"};">${fmtMoney(c.status === "Sold" ? c.sold_price : c.market_value)}</div>
+          </div>` : ""}
         <div class="card-row-meta muted">
           <span>Cost: ${fmtMoney(c.total_cost)}</span>
-          ${c.status === "Sold" && c.sold_price != null ? `<span style="color:var(--green, #10b981);font-weight:700;">Sold: ${fmtMoney(c.sold_price)}</span>` : ""}
           ${c.market_value != null && c.status !== "Sold" ? `<span style="color:var(--primary);font-weight:700;">Value: ${fmtMoney(c.market_value)}</span>` : ""}
           ${c.est_profit != null && c.status !== "Sold" ? `<span class="${c.est_profit >= 0 ? "profit-pos" : "profit-neg"}" style="font-weight:700;">Est. Profit: ${fmtMoney(c.est_profit)}${c.total_cost > 0 ? ` (${c.est_profit >= 0 ? "+" : ""}${((c.est_profit / c.total_cost) * 100).toFixed(1)}% ROI)` : ""}</span>` : ""}
           ${predParts.length ? `<span>Pred: ${predParts.join(" ")}</span>` : ""}
           ${c.profit != null ? `<span class="${c.profit >= 0 ? "profit-pos" : "profit-neg"}">Profit: ${fmtMoney(c.profit)}${(c.total_cost + (c.selling_fees || 0)) > 0 ? ` (${c.profit >= 0 ? "+" : ""}${((c.profit / (c.total_cost + (c.selling_fees || 0))) * 100).toFixed(1)}% ROI)` : ""}${c.market_value != null && c.sold_price != null ? ` • vs Mkt: ${c.sold_price - c.market_value >= 0 ? "+" : ""}${fmtMoney(c.sold_price - c.market_value)}` : ""}</span>` : ""}
         </div>
-        <div class="card-row-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-          ${c.fanatics_url ? `<a href="${escapeHtml(c.fanatics_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary" onclick="event.stopPropagation()">${escapeHtml(linkLabel)}</a>` : ""}
-          ${c.pricecharting_url ? `<a href="${escapeHtml(c.pricecharting_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary" onclick="event.stopPropagation()">${c.pricecharting_url.toLowerCase().includes("tcgplayer") ? "TCGplayer ↗" : "PriceCharting ↗"}</a>` : ""}
-          ${(isGraded || c.cert_number) && c.status !== "Sold" ? `<button type="button" class="btn btn-sm btn-secondary btn-inline-pull-val" data-card-id="${c.id}">💲 Pull Value</button>` : ""}
-          <button type="button" class="btn btn-sm btn-secondary btn-inline-move-card" data-card-id="${c.id}">📦 Move</button>
-          <button type="button" class="btn btn-sm btn-ghost btn-inline-del-card" data-card-id="${c.id}" title="Delete Card">${SVG_TRASH}</button>
-        </div>
+
       </div>
     `;
     const pullBtn = tile.querySelector(".btn-inline-pull-val");
@@ -2608,7 +2922,205 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-open-about")?.addEventListener("click", () => ($("about-modal").style.display = "flex"));
   $("btn-close-about")?.addEventListener("click", () => ($("about-modal").style.display = "none"));
   $("btn-done-about")?.addEventListener("click", () => ($("about-modal").style.display = "none"));
-  $("btn-about-versions")?.addEventListener("click", () => {
+  
+  // v0.80 Wire-ups: Home/End keys, Back to Top, Check Updates, In-App Tabs, Stream Showcase, Bulk Share Graphic, Auctions
+  document.addEventListener("keydown", (e) => {
+    const tag = (e.target?.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    if (e.key === "Home") {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else if (e.key === "End") {
+      e.preventDefault();
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+    } else if ($("showcase-modal")?.style.display === "flex") {
+      if (e.key === "ArrowRight" && showcaseIdx < showcaseCards.length - 1) { showcaseIdx++; renderStreamerShowcase(); }
+      else if (e.key === "ArrowLeft" && showcaseIdx > 0) { showcaseIdx--; renderStreamerShowcase(); }
+      else if (e.key === "Escape") $("showcase-modal").style.display = "none";
+    }
+  });
+  $("btn-back-to-top")?.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+  $("btn-close-inapp-drawer")?.addEventListener("click", () => { inAppTabs.length = 0; renderInAppTabs(); });
+
+  // Route Card Detail pricing link to In-App Popup; route all other external links to System Default Browser
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a");
+    if (!a) return;
+    if (a.id === "btn-download-infographic" || a.id === "btn-download-auctions-html" || a.hasAttribute("download")) return;
+    const href = (a.getAttribute("href") || "").trim();
+    if (!href.startsWith("http://") && !href.startsWith("https://")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (a.id === "link-pc-url") {
+      openInAppTab(href, a.textContent.trim() || "Pricing");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    openExternalUrl(href);
+  });
+
+  $("btn-check-updates")?.addEventListener("click", async () => {
+    const box = $("update-check-box");
+    const btn = $("btn-check-updates");
+    if (!box) return;
+    btn.disabled = true;
+    box.style.display = "block";
+    box.textContent = "Checking GitHub for newer releases...";
+    try {
+      const res = await apiJson("/api/check-updates");
+      if (res.update_available) {
+        box.innerHTML = `<strong>${escapeHtml(res.message)}</strong><div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;"><a href="${escapeHtml(res.download_url || res.release_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">⬇ Download v${escapeHtml(res.latest_version)}</a><a href="${escapeHtml(res.release_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">Open GitHub Release ↗</a></div>`;
+      } else {
+        box.innerHTML = `<span>${escapeHtml(res.message)}</span> <a href="https://github.com/CellbineFiles/tcg-grading-vault/releases" target="_blank" rel="noopener noreferrer" style="color:var(--primary);margin-left:6px;">View Releases ↗</a>`;
+      }
+    } catch (err) {
+      box.textContent = `Update check failed: ${err.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $("btn-bulk-pull-value")?.addEventListener("click", async () => {
+    let ids = [...state.selectedCardIds];
+    if (!ids.length) return showToast("Select at least one card first.");
+    if (ids.length > 4) { showToast("Share Graphic supports up to 4 cards — using the first 4 selected."); ids = ids.slice(0, 4); }
+    const btn = $("btn-bulk-pull-value");
+    if (btn) btn.disabled = true;
+    let ok = 0;
+    try {
+      for (let i = 0; i < ids.length; i++) {
+        if (btn) btn.textContent = `💲 ${i + 1}/${ids.length}...`;
+        try {
+          const res = await apiJson(`/api/cards/${ids[i]}/pull-value`, { method: "POST" });
+          if (res?.success) ok++;
+        } catch (_) {}
+      }
+      showToast(`Pulled market values for ${ok}/${ids.length} selected cards.`);
+      openSubmission(state.currentSubId, false, "preserve");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "💲 Pull Value";
+      }
+    }
+  });
+
+  $("btn-bulk-open-pc")?.addEventListener("click", () => {
+    const ids = state.selectedCardIds;
+    if (!ids.size) return showToast("Select at least one card first.");
+    const cards = (state.currentSubCards || []).filter((c) => ids.has(c.id) && c.pricecharting_url);
+    if (!cards.length) return showToast("None of the selected cards have a PriceCharting/TCGplayer link yet.");
+    cards.forEach((c) => openExternalUrl(c.pricecharting_url));
+  });
+
+  $("btn-bulk-open-fanatics")?.addEventListener("click", () => {
+    const ids = state.selectedCardIds;
+    if (!ids.size) return showToast("Select at least one card first.");
+    const cards = (state.currentSubCards || []).filter((c) => ids.has(c.id) && c.fanatics_url);
+    if (!cards.length) return showToast("None of the selected cards have a Fanatics / listing link yet.");
+    cards.forEach((c) => openExternalUrl(c.fanatics_url));
+  });
+
+  $("btn-bulk-showcase")?.addEventListener("click", () => {
+    const ids = new Set(Array.from(state.selectedCardIds));
+    const cards = (state.currentSubCards || []).filter((c) => ids.has(c.id));
+    openStreamerShowcase(cards, `${state.currentSubData?.title || "Submission"} — Stream Showcase`);
+  });
+  $("btn-card-showcase")?.addEventListener("click", () => {
+    if (state.currentCardData) openStreamerShowcase([state.currentCardData], state.currentCardData.card_name);
+  });
+  $("btn-bulk-share-graphic")?.addEventListener("click", () => {
+    const ids = Array.from(state.selectedCardIds);
+    if (!ids.length) { showToast("Select one or more cards first."); return; }
+    openInfographicModal("", `${state.currentSubData?.title || "Selected"} (${ids.length} Cards)`, "selected_cards_showcase.png", ids);
+  });
+
+  $("btn-close-showcase")?.addEventListener("click", () => ($("showcase-modal").style.display = "none"));
+  $("btn-showcase-prev")?.addEventListener("click", () => { if (showcaseIdx > 0) { showcaseIdx--; renderStreamerShowcase(); } });
+  $("btn-showcase-next")?.addEventListener("click", () => { if (showcaseIdx < showcaseCards.length - 1) { showcaseIdx++; renderStreamerShowcase(); } });
+  $("btn-showcase-flip")?.addEventListener("click", () => { showcaseBack = !showcaseBack; renderStreamerShowcase(); });
+  $("btn-showcase-mode-toggle")?.addEventListener("click", () => { showcaseGridMode = !showcaseGridMode; renderStreamerShowcase(); });
+
+  // Auctions view wiring
+  $("btn-nav-auctions")?.addEventListener("click", () => openAuctionsView(true));
+  $("btn-open-add-auctions")?.addEventListener("click", () => { $("add-auctions-urls").value = ""; $("add-auctions-modal").style.display = "flex"; });
+  $("btn-close-add-auctions")?.addEventListener("click", () => ($("add-auctions-modal").style.display = "none"));
+  $("btn-cancel-add-auctions")?.addEventListener("click", () => ($("add-auctions-modal").style.display = "none"));
+  $("btn-submit-add-auctions")?.addEventListener("click", async () => {
+    const urls = ($("add-auctions-urls").value || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    const cost = Number($("add-auctions-cost").value || 0);
+    if (!urls.length) { showToast("Paste at least one auction URL."); return; }
+    const btn = $("btn-submit-add-auctions");
+    btn.disabled = true;
+    try {
+      const r = await apiJson("/api/auctions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls, cost }) });
+      $("add-auctions-modal").style.display = "none";
+      auctionsCache = await apiJson("/api/auctions");
+      renderAuctionsGrid();
+      showToast(`Added ${r.count} auction(s)!`);
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  $("btn-refresh-all-auctions")?.addEventListener("click", async () => {
+    const r = await apiJson("/api/auctions/refresh", { method: "POST" });
+    auctionsCache = r.auctions || [];
+    aucCountdown = 60;
+    renderAuctionsGrid();
+    showToast(`Refreshed ${r.updated || 0} auction(s)!`);
+  });
+  $("sub-card-size-slider")?.addEventListener("input", (e) => {
+    const v = Number(e.target.value || 350);
+    const listEl = $("detail-cards-list");
+    if (listEl) {
+      listEl.style.setProperty("--sub-card-w", `${v}px`);
+      listEl.style.setProperty("--sub-scale", (v / 350).toFixed(3));
+    }
+  });
+  $("auc-card-size-slider")?.addEventListener("input", (e) => {
+    const v = Number(e.target.value || 320);
+    const g = $("auctions-grid");
+    if (g) {
+      g.style.setProperty("--auc-card-w", `${v}px`);
+      g.style.setProperty("--auc-scale", (v / 320).toFixed(3));
+    }
+  });
+  $("btn-clear-all-auctions")?.addEventListener("click", async () => {
+    if (!auctionsCache.length) return;
+    if (!confirm(`Clear all ${auctionsCache.length} tracked auctions?`)) return;
+    await apiJson("/api/auctions", { method: "DELETE" });
+    auctionsCache = [];
+    selectedAuctionId = null;
+
+    renderAuctionsGrid();
+    showToast("Cleared all tracked auctions.");
+  });
+  $("btn-close-auc-viewer")?.addEventListener("click", () => {
+    selectedAuctionId = null;
+
+    renderAuctionsGrid();
+  });
+  $("btn-auc-viewer-link-vault")?.addEventListener("click", () => { if (selectedAuctionId) openLinkAuctionModal(selectedAuctionId); });
+  $("btn-close-link-auction")?.addEventListener("click", () => ($("link-auction-modal").style.display = "none"));
+  $("btn-cancel-link-auction")?.addEventListener("click", () => ($("link-auction-modal").style.display = "none"));
+  $("btn-confirm-link-auction")?.addEventListener("click", async () => {
+    const cardId = Number($("link-auc-card-select").value || 0);
+    if (!cardId || !linkTargetAuction) return;
+    const fees = Number($("link-auc-fees").value || 0);
+    const r = await apiJson(`/api/auctions/${linkTargetAuction.id}/link-card`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ card_id: cardId, selling_fees: fees }),
+    });
+    $("link-auction-modal").style.display = "none";
+    auctionsCache = await apiJson("/api/auctions");
+    renderAuctionsGrid();
+    showToast(`Marked card Sold at ${fmtMoney(r.sold_price)}!`);
+  });
+
+$("btn-about-versions")?.addEventListener("click", () => {
     $("about-modal").style.display = "none";
     renderHelpTab("versions");
     $("help-modal").style.display = "flex";
@@ -3739,6 +4251,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (mSub) target = { view: "submission", subId: Number(mSub[1]) };
       else if (mCard) target = { view: "card", cardId: Number(mCard[1]) };
       else if (h === "#all-cards") target = { view: "all-cards" };
+      else if (h === "#auctions") target = { view: "auctions" };
       else if (h === "#wizard") target = { view: "wizard" };
       else target = { view: "home" };
     }
@@ -3748,6 +4261,8 @@ document.addEventListener("DOMContentLoaded", () => {
       openCardDetail(target.cardId, false);
     } else if (target.view === "all-cards") {
       openAllCardsView(false, "restore");
+    } else if (target.view === "auctions") {
+      openAuctionsView(false);
     } else if (target.view === "wizard") {
       startNewSubmissionWizard(false);
     } else {
@@ -3798,3 +4313,108 @@ document.addEventListener("DOMContentLoaded", () => {
     loadHome(false);
   }
 });
+
+
+const CURRENT_APP_VERSION = "0.91";
+const CURRENT_UPDATE_BULLETS = [
+  "Redesigned Multi-Card Share Graphic (up to 4 cards) with bold, readable stats and zero wasted margin.",
+  "Home Card View now lets you scroll left & right through all card photos just like List View.",
+  "Redesigned Submission List View with large slab scans and compact, aligned Market Value & Profit info.",
+  "Locked horizontal page width so the app never scrolls left or right.",
+  "External links open in your system default browser while in-app popups keep navigation inside the popup.",
+];
+
+async function openExternalUrl(url) {
+  if (!url || !url.startsWith("http")) return;
+  try {
+    await apiJson("/api/open-external", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+  } catch (_) {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+
+
+window.addEventListener("message", (ev) => {
+  if (ev?.data?.type === "inapp-nav" && ev.data.url && activeInAppTabIdx >= 0 && inAppTabs[activeInAppTabIdx]) {
+    inAppTabs[activeInAppTabIdx].url = ev.data.url;
+    const popout = $("inapp-popout-link");
+    if (popout) popout.href = ev.data.url;
+  }
+});
+
+function maybeShowWelcomeUpdateModal() {
+  if (localStorage.getItem("tcg_vault_welcome_disabled") === "1") return;
+  if (localStorage.getItem("tcg_vault_last_seen_ver") === CURRENT_APP_VERSION) return;
+  const modal = $("welcome-update-modal");
+  const list = $("welcome-update-bullets");
+  const cb = $("welcome-disable-cb");
+  if (!modal || !list) return;
+  list.innerHTML = CURRENT_UPDATE_BULLETS.map((b) => `<li>${escapeHtml(b)}</li>`).join("");
+  if (cb) cb.checked = false;
+  modal.style.display = "flex";
+}
+
+function closeWelcomeUpdateModal() {
+  const modal = $("welcome-update-modal");
+  const cb = $("welcome-disable-cb");
+  localStorage.setItem("tcg_vault_last_seen_ver", CURRENT_APP_VERSION);
+  if (cb && cb.checked) {
+    localStorage.setItem("tcg_vault_welcome_disabled", "1");
+  }
+  if (modal) modal.style.display = "none";
+}
+
+$("btn-close-welcome-modal")?.addEventListener("click", closeWelcomeUpdateModal);
+$("btn-welcome-got-it")?.addEventListener("click", closeWelcomeUpdateModal);
+
+$("btn-inapp-copy-link")?.addEventListener("click", async () => {
+  const cur = inAppTabs[activeInAppTabIdx];
+  if (!cur?.url) return showToast("No webpage open.");
+  try {
+    await navigator.clipboard.writeText(cur.url);
+    showToast("Copied link to clipboard!");
+  } catch (_) {
+    prompt("Copy this URL:", cur.url);
+  }
+});
+
+$("btn-inapp-assign-pricing")?.addEventListener("click", () => {
+  const cur = inAppTabs[activeInAppTabIdx];
+  if (!cur?.url) return showToast("No webpage open.");
+  const pcInput = $("edit-pc-url");
+  if (!pcInput || $("card-detail-modal")?.style.display === "none") {
+    return showToast("Open a card's detail popup first to assign its pricing link.");
+  }
+  pcInput.value = cur.url;
+  const pullBtn = $("btn-pull-from-pc-url");
+  if (pullBtn) pullBtn.click();
+  showToast("Assigned current webpage as pricing link!");
+});
+
+setTimeout(maybeShowWelcomeUpdateModal, 450);
+
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && state.bulkSelectMode) {
+    const anyModalOpen = [...document.querySelectorAll(".modal-backdrop")].some((m) => m.style.display === "flex");
+    if (!anyModalOpen) {
+      state.bulkSelectMode = false;
+      state.selectedCardIds.clear();
+      updateBulkSelectionBar();
+      renderCurrentSubCards();
+    }
+  }
+});
+
+document.addEventListener("wheel", (e) => {
+  const strip = e.target.closest(".tile-thumbs");
+  if (strip && strip.scrollWidth > strip.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+    e.preventDefault();
+    strip.scrollLeft += e.deltaY;
+  }
+}, { passive: false });

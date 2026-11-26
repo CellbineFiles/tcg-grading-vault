@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from infographic import generate_card_infographic, generate_summary_infographic
+from infographic import generate_card_infographic, generate_multi_cards_infographic, generate_summary_infographic
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -205,6 +205,26 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_sub_id ON cards(submission_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_cert ON cards(cert_number);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auctions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL,
+                platform TEXT DEFAULT 'eBay',
+                title TEXT DEFAULT '',
+                image_url TEXT DEFAULT '',
+                current_bid REAL DEFAULT 0.0,
+                bid_count INTEGER DEFAULT 0,
+                time_left TEXT DEFAULT '',
+                status TEXT DEFAULT 'Active',
+                cost REAL DEFAULT 0.0,
+                final_price REAL,
+                linked_card_id INTEGER,
+                last_refreshed TEXT DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS imported_bundles (
@@ -8926,6 +8946,566 @@ def import_excel(
 
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+
+
+
+class OpenExternalRequest(BaseModel):
+    url: str
+
+
+@app.post("/api/open-external")
+def open_external_in_default_browser(req: OpenExternalRequest):
+    import webbrowser
+    u = (req.url or "").strip()
+    if not u.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Valid http(s) URL required.")
+    webbrowser.open(u)
+    return {"ok": True, "url": u}
+
+
+@app.post("/api/shutdown")
+def shutdown_server():
+    def _exit_soon():
+        time.sleep(0.35)
+        os._exit(0)
+    threading.Thread(target=_exit_soon, daemon=True).start()
+    return {"ok": True, "message": "TCG Grading Vault server is stopping."}
+
+
+@app.get("/api/check-updates")
+def check_github_updates():
+    ver_file = BASE_DIR / "version.txt"
+    cur_ver = ver_file.read_text("utf-8").strip() if ver_file.exists() else "0.80"
+    def _ver_tuple(v: str):
+        nums = [int(x) for x in re.findall(r"\d+", v or "")]
+        return tuple(nums) if nums else (0,)
+    try:
+        r = requests.get(
+            "https://api.github.com/repos/CellbineFiles/tcg-grading-vault/releases",
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "TCG-Grading-Vault"},
+            timeout=8,
+        )
+        if r.status_code != 200:
+            return {"ok": False, "current_version": cur_ver, "message": f"GitHub returned HTTP {r.status_code}."}
+        releases = r.json() or []
+        if not releases:
+            return {"ok": True, "current_version": cur_ver, "update_available": False, "message": "No releases published on GitHub yet."}
+        latest = releases[0]
+        tag = (latest.get("tag_name") or "").lstrip("vV").strip()
+        assets = latest.get("assets") or []
+        dl_url = assets[0].get("browser_download_url") if assets else (latest.get("zipball_url") or latest.get("html_url"))
+        is_newer = _ver_tuple(tag) > _ver_tuple(cur_ver)
+        return {
+            "ok": True,
+            "current_version": cur_ver,
+            "latest_version": tag or latest.get("name") or "",
+            "update_available": is_newer,
+            "release_url": latest.get("html_url") or "https://github.com/CellbineFiles/tcg-grading-vault/releases",
+            "download_url": dl_url or "",
+            "release_title": latest.get("name") or f"v{tag}",
+            "message": f"Update available: v{tag}!" if is_newer else f"You're up to date (v{cur_ver}).",
+        }
+    except Exception as exc:
+        return {"ok": False, "current_version": cur_ver, "message": f"Could not reach GitHub: {exc}"}
+
+
+def _render_auction_snapshot_html(u: str, info: dict) -> str:
+    import html as _html
+    title = _html.escape(str(info.get("title") or u))
+    platform = _html.escape(str(info.get("platform") or ("Fanatics" if "fanaticscollect" in u.lower() else "eBay")))
+    status = _html.escape(str(info.get("status") or "Active"))
+    time_left = _html.escape(str(info.get("time_left") or ("ENDED" if status == "Ended" else "Live")))
+    bid_count = int(info.get("bid_count") or 0)
+    val = info.get("final_price") if info.get("final_price") is not None else (info.get("current_bid") or 0.0)
+    val_str = f"${float(val):,.2f}"
+    img_url = str(info.get("image_url") or "").strip()
+    img_block = (
+        f'<img src="{_html.escape(img_url)}" alt="{title}" style="max-width:260px;max-height:360px;object-fit:contain;border-radius:10px;border:1px solid #334155;background:#0b1220;" />'
+        if img_url else '<div style="width:220px;height:300px;display:flex;align-items:center;justify-content:center;border:1px dashed #334155;border-radius:10px;color:#94a3b8;">No Image</div>'
+    )
+    safe_u = _html.escape(u)
+    return f"""<!doctype html><html><body style="margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:94vh;padding:20px;">
+      <div style="max-width:560px;width:100%;background:#131c31;border:1px solid #334155;border-radius:16px;padding:24px;display:flex;gap:20px;align-items:center;flex-wrap:wrap;justify-content:center;">
+        <div>{img_block}</div>
+        <div style="flex:1;min-width:220px;">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <span style="background:#0284c7;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;">{platform}</span>
+            <span style="color:#94a3b8;font-size:12px;">{status} • {time_left} • {bid_count} bids</span>
+          </div>
+          <h2 style="margin:0 0 12px;font-size:18px;line-height:1.3;">{title}</h2>
+          <div style="background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px 16px;margin-bottom:14px;">
+            <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;">{"Final Bid" if status == "Ended" else "Current Bid"}</div>
+            <div style="font-size:28px;font-weight:900;color:#38bdf8;">{val_str}</div>
+          </div>
+          <a href="{safe_u}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:11px 20px;background:#0284c7;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;">↗ Open Live Listing in Browser</a>
+          <p style="color:#64748b;font-size:12px;margin:10px 0 0;line-height:1.4;">Opens directly in your default browser with your active eBay / Fanatics Collect login.</p>
+        </div>
+      </div>
+    </body></html>"""
+
+
+@app.get("/api/proxy-preview")
+def proxy_preview_page(url: str, inline_nav: int = 0):
+    from urllib.parse import urljoin, quote
+    u = (url or "").strip()
+    if not u.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Valid http(s) URL required.")
+    if "ebay.com/itm/" in u.lower():
+        m_itm = re.search(r"(https?://[^/]+/itm/(?:[^/?#]+/)?\d+)", u, re.I)
+        if m_itm:
+            u = m_itm.group(1)
+
+    # Check if this URL is a tracked auction in our DB first
+    db_auc = None
+    try:
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT * FROM auctions WHERE url = ? OR url LIKE ? LIMIT 1", (u, f"{u}%")).fetchone()
+            if row:
+                db_auc = dict(row)
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    is_auction_site = any(h in u.lower() for h in ("ebay.com", "fanaticscollect.com", "pwccmarketplace.com"))
+    if is_auction_site and not inline_nav:
+        info = db_auc or _scrape_auction_url(u)
+        return Response(content=_render_auction_snapshot_html(u, info), media_type="text/html")
+
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/126.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        resp = requests.get(u, headers=headers, timeout=12, allow_redirects=True)
+        html = resp.text
+        final_url = resp.url
+        if any(k in html.lower() for k in ("error page", "pardon our interruption", "just a moment", "verify you are human")):
+            try:
+                pw_u, pw_html, _ = fetch_html_with_playwright(u, visible=False, max_wait_s=12)
+                if pw_html and "error page" not in pw_html.lower():
+                    html = pw_html
+                    final_url = pw_u or final_url
+            except Exception:
+                pass
+        low_h = html.lower()
+        if any(k in low_h for k in ("error page", "something went wrong on our end", "pardon our interruption", "just a moment", "verify you are human")):
+            info = db_auc or _scrape_auction_url(u)
+            return Response(content=_render_auction_snapshot_html(u, info), media_type="text/html")
+
+        html = re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.I | re.S)
+        if inline_nav:
+            soup = BeautifulSoup(html, "html.parser")
+            for b_tag in soup.find_all("base"):
+                b_tag.decompose()
+            for tag_name, attr in (("img", "src"), ("link", "href"), ("source", "src")):
+                for el in soup.find_all(tag_name):
+                    val = (el.get(attr) or "").strip()
+                    if val and not val.startswith(("data:", "http://", "https://", "blob:")):
+                        el[attr] = urljoin(final_url, val)
+            for a_tag in soup.find_all("a", href=True):
+                raw_href = (a_tag.get("href") or "").strip()
+                if not raw_href or raw_href.startswith(("#", "javascript:", "mailto:")):
+                    continue
+                abs_href = urljoin(final_url, raw_href)
+                if abs_href.startswith(("http://", "https://")):
+                    a_tag["href"] = f"/api/proxy-preview?inline_nav=1&url={quote(abs_href, safe='')}"
+                    if a_tag.has_attr("target"):
+                        del a_tag["target"]
+            for f_tag in soup.find_all("form"):
+                act = (f_tag.get("action") or "").strip()
+                if act and not act.startswith(("http://", "https://")):
+                    f_tag["action"] = urljoin(final_url, act)
+                f_tag["target"] = "_blank"
+            nav_script = soup.new_tag("script")
+            nav_script.string = f'try{{window.parent.postMessage({{type:"inapp-nav",url:{json.dumps(final_url)}}},"*");}}catch(e){{}}'
+            (soup.body or soup).append(nav_script)
+            html = str(soup)
+        else:
+            base_tag = f'<base href="{final_url}" target="_blank" />'
+            if "<head" in html.lower():
+                html = re.sub(r"<head[^>]*>", lambda m: m.group(0) + base_tag, html, count=1, flags=re.I)
+            else:
+                html = base_tag + html
+        return Response(content=html, media_type="text/html")
+    except Exception as exc:
+        return Response(
+            content=f"<html><body style='background:#0f172a;color:#e2e8f0;font-family:sans-serif;padding:24px;'><h3>Could not load inline preview</h3><p>{exc}</p><p><a href='{u}' target='_blank' style='color:#38bdf8;'>Open in external browser ↗</a></p></body></html>",
+            media_type="text/html",
+        )
+
+class MultiCardInfographicRequest(BaseModel):
+    card_ids: list[int] = []
+    theme: str = "water"
+    title: str = "Selected Cards Showcase"
+
+
+@app.post("/api/infographic/cards")
+def infographic_multi_cards(req: MultiCardInfographicRequest):
+    if not req.card_ids:
+        raise HTTPException(status_code=400, detail="Select at least one card.")
+    conn = get_db()
+    try:
+        placeholders = ",".join("?" for _ in req.card_ids)
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                f"""
+                SELECT c.*, s.company AS submission_company, s.title AS submission_title
+                FROM cards c JOIN submissions s ON s.id = c.submission_id
+                WHERE c.id IN ({placeholders})
+                """,
+                req.card_ids,
+            ).fetchall()
+        ]
+        png_bytes = generate_multi_cards_infographic(rows[:4], UPLOADS_DIR, theme_name=req.theme, title=req.title)
+        return Response(content=png_bytes, media_type="image/png")
+    finally:
+        conn.close()
+
+
+def _scrape_auction_url(url: str) -> dict:
+    u = (url or "").strip()
+    low = u.lower()
+    platform = "Fanatics" if ("fanaticscollect" in low or "pwcc" in low) else "eBay"
+    out = {
+        "platform": platform,
+        "title": u,
+        "image_url": "",
+        "current_bid": 0.0,
+        "bid_count": 0,
+        "time_left": "",
+        "status": "Active",
+    }
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    if "ebay.com/itm/" in low:
+        m_itm = re.search(r"(https?://[^/]+/itm/(?:[^/?#]+/)?\d+)", u, re.I)
+        if m_itm:
+            u = m_itm.group(1)
+    try:
+        resp = requests.get(u, headers=headers, timeout=12, allow_redirects=True)
+        html = resp.text
+        if any(k in html.lower() for k in ("error page", "pardon our interruption", "just a moment", "verify you are human")) or (
+            platform == "eBay" and "og:title" not in html.lower()
+        ):
+            try:
+                _, pw_html, _ = fetch_html_with_playwright(u, visible=False, max_wait_s=12)
+                if pw_html and "error page" not in pw_html.lower():
+                    html = pw_html
+            except Exception:
+                pass
+        soup = BeautifulSoup(html, "html.parser")
+        og_t = soup.find("meta", attrs={"property": "og:title"})
+        h1 = soup.find("h1")
+        t_txt = ((og_t.get("content") if og_t else "") or (h1.get_text(" ", strip=True) if h1 else "") or (soup.title.get_text(" ", strip=True) if soup.title else "")).strip()
+        t_txt = re.sub(r"\s*\|\s*eBay\s*$", "", t_txt, flags=re.I).strip()
+        if t_txt:
+            out["title"] = t_txt
+
+        og_img = soup.find("meta", attrs={"property": "og:image"})
+        if og_img and og_img.get("content"):
+            out["image_url"] = og_img["content"].strip()
+
+        page_txt = soup.get_text(" ", strip=True)
+        # Current bid / price
+        for pat in [
+            r'"currentBid"\s*:\s*\{[^}]*"value"\s*:\s*"?(\d+(?:\.\d{1,2})?)"?',
+            r'"price"\s*:\s*"?(\d+(?:\.\d{1,2})?)"?',
+            r"(?:Current bid|Winning bid|US)\s*\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)",
+            r"\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)",
+        ]:
+            m = re.search(pat, html if pat.startswith('"') else page_txt, re.I)
+            if m:
+                out["current_bid"] = float(m.group(1).replace(",", ""))
+                break
+
+        # Bid count
+        m_bids = re.search(r"\b(\d{1,4})\s*bids?\b", page_txt, re.I) or re.search(r'"bidCount"\s*:\s*(\d+)', html, re.I)
+        if m_bids:
+            out["bid_count"] = int(m_bids.group(1))
+
+        # Ended vs Time left
+        if re.search(r"\b(bidding has ended|auction ended|sold for|winning bid)\b", page_txt, re.I):
+            out["status"] = "Ended"
+            out["time_left"] = "ENDED"
+        else:
+            m_tl = re.search(r"(?:Ends in|Time left)[:\s]*([0-9]+[dhms\s0-9]*)", page_txt, re.I)
+            if m_tl:
+                out["time_left"] = m_tl.group(1).strip()[:24]
+    except Exception:
+        pass
+    return out
+
+
+class AuctionCreateRequest(BaseModel):
+    urls: list[str] = []
+    cost: float = 0.0
+
+
+class AuctionUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    image_url: Optional[str] = None
+    current_bid: Optional[float] = None
+    bid_count: Optional[int] = None
+    time_left: Optional[str] = None
+    status: Optional[str] = None
+    cost: Optional[float] = None
+    final_price: Optional[float] = None
+
+
+class AuctionLinkCardRequest(BaseModel):
+    card_id: int
+    selling_fees: float = 0.0
+
+
+@app.get("/api/auctions")
+def list_auctions():
+    conn = get_db()
+    try:
+        rows = [dict(r) for r in conn.execute("SELECT * FROM auctions ORDER BY id DESC").fetchall()]
+        return rows
+    finally:
+        conn.close()
+
+
+@app.post("/api/auctions")
+def add_auctions(req: AuctionCreateRequest):
+    urls = [u.strip() for u in req.urls if u and u.strip().startswith(("http://", "https://"))]
+    if not urls:
+        raise HTTPException(status_code=400, detail="Enter at least one valid http(s) auction URL.")
+    conn = get_db()
+    created = []
+    ts = now_iso()
+    try:
+        for u in urls:
+            info = _scrape_auction_url(u)
+            cur = conn.execute(
+                """
+                INSERT INTO auctions (url, platform, title, image_url, current_bid, bid_count, time_left, status, cost, last_refreshed, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    u,
+                    info["platform"],
+                    info["title"],
+                    info["image_url"],
+                    info["current_bid"],
+                    info["bid_count"],
+                    info["time_left"],
+                    info["status"],
+                    float(req.cost or 0.0),
+                    ts,
+                    ts,
+                ),
+            )
+            created.append(dict(conn.execute("SELECT * FROM auctions WHERE id = ?", (cur.lastrowid,)).fetchone()))
+        conn.commit()
+        return {"created": created, "count": len(created)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/auctions/refresh")
+def refresh_all_auctions():
+    conn = get_db()
+    ts = now_iso()
+    try:
+        rows = conn.execute("SELECT * FROM auctions").fetchall()
+        updated = 0
+        for r in rows:
+            info = _scrape_auction_url(r["url"])
+            conn.execute(
+                """
+                UPDATE auctions
+                SET title = COALESCE(NULLIF(?, ''), title),
+                    image_url = COALESCE(NULLIF(?, ''), image_url),
+                    current_bid = ?,
+                    bid_count = ?,
+                    time_left = ?,
+                    status = ?,
+                    last_refreshed = ?
+                WHERE id = ?
+                """,
+                (
+                    info["title"] if info["title"] != r["url"] else "",
+                    info["image_url"],
+                    info["current_bid"] if info["current_bid"] > 0 else r["current_bid"],
+                    info["bid_count"] if info["bid_count"] > 0 else r["bid_count"],
+                    info["time_left"] or r["time_left"],
+                    info["status"],
+                    ts,
+                    r["id"],
+                ),
+            )
+            updated += 1
+        conn.commit()
+        return {"updated": updated, "auctions": [dict(x) for x in conn.execute("SELECT * FROM auctions ORDER BY id DESC").fetchall()]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/auctions/{auction_id}/refresh")
+def refresh_single_auction(auction_id: int):
+    conn = get_db()
+    try:
+        r = conn.execute("SELECT * FROM auctions WHERE id = ?", (auction_id,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="Auction not found.")
+        info = _scrape_auction_url(r["url"])
+        ts = now_iso()
+        conn.execute(
+            """
+            UPDATE auctions
+            SET title = COALESCE(NULLIF(?, ''), title),
+                image_url = COALESCE(NULLIF(?, ''), image_url),
+                current_bid = ?,
+                bid_count = ?,
+                time_left = ?,
+                status = ?,
+                last_refreshed = ?
+            WHERE id = ?
+            """,
+            (
+                info["title"] if info["title"] != r["url"] else "",
+                info["image_url"],
+                info["current_bid"] if info["current_bid"] > 0 else r["current_bid"],
+                info["bid_count"] if info["bid_count"] > 0 else r["bid_count"],
+                info["time_left"] or r["time_left"],
+                info["status"],
+                ts,
+                auction_id,
+            ),
+        )
+        conn.commit()
+        return dict(conn.execute("SELECT * FROM auctions WHERE id = ?", (auction_id,)).fetchone())
+    finally:
+        conn.close()
+
+
+@app.put("/api/auctions/{auction_id}")
+def update_auction(auction_id: int, req: AuctionUpdateRequest):
+    conn = get_db()
+    try:
+        r = conn.execute("SELECT * FROM auctions WHERE id = ?", (auction_id,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="Auction not found.")
+        fields = []
+        vals = []
+        for k in ("title", "image_url", "current_bid", "bid_count", "time_left", "status", "cost", "final_price"):
+            v = getattr(req, k)
+            if v is not None:
+                fields.append(f"{k} = ?")
+                vals.append(v)
+        if fields:
+            vals.append(auction_id)
+            conn.execute(f"UPDATE auctions SET {', '.join(fields)} WHERE id = ?", vals)
+            conn.commit()
+        return dict(conn.execute("SELECT * FROM auctions WHERE id = ?", (auction_id,)).fetchone())
+    finally:
+        conn.close()
+
+
+@app.delete("/api/auctions")
+def clear_all_auctions():
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM auctions")
+        conn.commit()
+        return {"cleared": True}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/auctions/{auction_id}")
+def delete_auction(auction_id: int):
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM auctions WHERE id = ?", (auction_id,))
+        conn.commit()
+        return {"deleted": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/auctions/{auction_id}/link-card")
+def link_auction_to_vault_card(auction_id: int, req: AuctionLinkCardRequest):
+    conn = get_db()
+    try:
+        auc = conn.execute("SELECT * FROM auctions WHERE id = ?", (auction_id,)).fetchone()
+        if not auc:
+            raise HTTPException(status_code=404, detail="Auction not found.")
+        card = conn.execute("SELECT * FROM cards WHERE id = ?", (req.card_id,)).fetchone()
+        if not card:
+            raise HTTPException(status_code=404, detail="Card not found.")
+        sale_price = float(auc["final_price"] if auc["final_price"] is not None else auc["current_bid"] or 0.0)
+        ts = now_iso()
+        conn.execute(
+            """
+            UPDATE cards
+            SET status = 'Sold', sold_price = ?, selling_fees = ?, sold_date = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (sale_price, float(req.selling_fees or 0.0), datetime.now().strftime("%Y-%m-%d"), ts, req.card_id),
+        )
+        conn.execute(
+            "UPDATE auctions SET linked_card_id = ?, status = 'Ended', final_price = ? WHERE id = ?",
+            (req.card_id, sale_price, auction_id),
+        )
+        conn.commit()
+        return {"linked": True, "card": get_card(req.card_id), "sold_price": sale_price}
+    finally:
+        conn.close()
+
+
+@app.get("/api/auctions/export-html")
+def export_auctions_html_report():
+    conn = get_db()
+    try:
+        rows = [dict(r) for r in conn.execute("SELECT * FROM auctions ORDER BY id DESC").fetchall()]
+        total_items = len(rows)
+        ended_rows = [r for r in rows if (r.get("status") or "") == "Ended"]
+        total_cost = sum(float(r.get("cost") or 0) for r in rows)
+        combined_bids = sum(float(r.get("final_price") if r.get("final_price") is not None else (r.get("current_bid") or 0)) for r in rows)
+        sold_total = sum(float(r.get("final_price") if r.get("final_price") is not None else (r.get("current_bid") or 0)) for r in ended_rows)
+        cards_html = []
+        for r in rows:
+            val = float(r.get("final_price") if r.get("final_price") is not None else (r.get("current_bid") or 0))
+            img_tag = f'<img src="{r["image_url"]}" alt="item" style="width:100%;height:190px;object-fit:contain;border-radius:8px;" />' if r.get("image_url") else '<div style="height:190px;display:flex;align-items:center;justify-content:center;color:#94a3b8;">No Image</div>'
+            cards_html.append(f"""
+            <div style="background:#131c31;border:1px solid #334155;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;">
+              <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{r.get("title") or "Auction"}</div>
+              <div style="font-size:12px;color:#94a3b8;">{r.get("platform")} • {r.get("bid_count") or 0} bids • {r.get("time_left") or r.get("status")}</div>
+              {img_tag}
+              <div style="font-size:20px;font-weight:800;color:#10b981;text-align:center;">${val:,.2f}</div>
+              <div style="font-size:12px;color:#cbd5e1;text-align:center;">Cost: ${float(r.get("cost") or 0):,.2f} • <a href="{r.get("url")}" target="_blank" style="color:#38bdf8;">View Listing ↗</a></div>
+            </div>""")
+        doc = f"""<!doctype html><html><head><meta charset="utf-8"><title>Live Auction Monitor Report</title></head>
+        <body style="background:#0f172a;color:#f8fafc;font-family:system-ui,sans-serif;padding:24px;max-width:1280px;margin:0 auto;">
+        <h1 style="margin:0 0 8px;">TCG Grading Vault — Auction Monitor Report</h1>
+        <p style="color:#94a3b8;">Items: <strong>{total_items}</strong> • Ended/Sold: <strong>{len(ended_rows)}</strong> ($<strong>{sold_total:,.2f}</strong>) • Total Cost: <strong>${total_cost:,.2f}</strong> • Combined Bids: <strong>${combined_bids:,.2f}</strong></p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-top:18px;">{''.join(cards_html)}</div>
+        </body></html>"""
+        return Response(
+            content=doc,
+            media_type="text/html",
+            headers={"Content-Disposition": 'attachment; filename="auction_monitor_report.html"'},
+        )
+    finally:
+        conn.close()
 
 
 @app.get("/")

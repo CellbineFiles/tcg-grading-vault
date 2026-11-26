@@ -1,4 +1,4 @@
-# TCG Grading Vault (`v0.73`)
+# TCG Grading Vault (`v0.91`)
 
 A **100% local, privacy-first Pokémon & TCG grading tracker**. All submissions, card details, financial records, eBay bookkeeping, and uploaded slab scans stay strictly on your own computer in `./data/tcg_tracker.db` and `./data/uploads/`. No cloud accounts or external databases are used.
 
@@ -31,6 +31,6 @@ You can move the `tcg_grader_tracker` folder anywhere on your computer after sto
 ---
 
 ## Contact & Feedback
-- **Current Version**: `v0.73` (Pre-release; `v1.0` planned for broader public release)
+- **Current Version**: `v0.91` (Pre-release; `v1.0` planned for broader public release)
 - **Email**: `Cellbinefiles@gmail.com`
 - **Discord**: `@dots0576`

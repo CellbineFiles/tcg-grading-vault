@@ -320,3 +320,93 @@ def generate_summary_infographic(
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def generate_multi_cards_infographic(cards: list[dict], uploads_dir: Path, theme_name: str = "water", title: str = "Selected Cards Showcase") -> bytes:
+    theme = THEMES.get(theme_name, THEMES["water"])
+    show_cards = cards[:4]
+    n = max(1, len(show_cards))
+    W = 1280
+    H = 668
+    img = Image.new("RGB", (W, H), theme["bg"])
+    draw = ImageDraw.Draw(img)
+
+    # Outer themed frame with subtle top accent bar — zero wasted margin
+    _draw_round_rect(draw, (16, 16, W - 16, H - 16), 20, fill=theme["card"], outline=theme["accent"], width=2)
+    draw.rectangle((36, 18, W - 36, 23), fill=theme["accent"])
+
+    f_title = _load_font(30, bold=True)
+    f_sub = _load_font(16, bold=True)
+    f_pill = _load_font(14, bold=True)
+    f_card = _load_font(20, bold=True)
+    f_grade = _load_font(16, bold=True)
+    f_val = _load_font(24, bold=True)
+    f_profit = _load_font(14, bold=True)
+
+    total_cost = sum(float(c.get("acquisition_cost") or 0) + float(c.get("grading_cost") or 0) + float(c.get("shipping_cost") or 0) for c in show_cards)
+    total_val = sum(float(c.get("sold_price") if c.get("status") == "Sold" and c.get("sold_price") is not None else (c.get("market_value") or 0)) for c in show_cards)
+    net_profit = total_val - total_cost
+
+    draw.text((38, 34), title[:44], font=f_title, fill=(248, 250, 252))
+    draw.text(
+        (38, 72),
+        f"{len(show_cards)} Card{'s' if len(show_cards) != 1 else ''}  •  Cost {_fmt_money(total_cost)}  •  Value {_fmt_money(total_val)}  •  Net {'+' if net_profit >= 0 else ''}{_fmt_money(net_profit)}",
+        font=f_sub,
+        fill=theme["gem"],
+    )
+
+    # Top-right compact brand badge
+    brand_txt = "TCG GRADING VAULT"
+    _draw_round_rect(draw, (W - 234, 36, W - 36, 68), 10, fill=theme["bg"], outline=theme["accent"], width=1)
+    draw.text((W - 216, 44), brand_txt, font=f_pill, fill=theme["accent"])
+
+    pad_x = 36
+    top_y = 108
+    bot_pad = 32
+    gap = 18
+    avail_w = W - 2 * pad_x
+    cell_w = (avail_w - gap * (n - 1)) // n
+    cell_h = H - top_y - bot_pad
+
+    for idx, c in enumerate(show_cards):
+        x1 = pad_x + idx * (cell_w + gap)
+        y1 = top_y
+        x2 = x1 + cell_w
+        y2 = y1 + cell_h
+        _draw_round_rect(draw, (x1, y1, x2, y2), 16, fill=theme["bg"], outline=theme["accent"], width=2)
+
+        img_rel = c.get("cert_front_image") or c.get("raw_front_image") or ""
+        img_path = (uploads_dir / img_rel) if img_rel and not img_rel.startswith("http") else None
+        footer_h = 118
+        _paste_card_image(img, img_path, (x1 + 12, y1 + 10, x2 - 12, y2 - footer_h - 6))
+
+        # Divider above card text footer
+        div_y = y2 - footer_h
+        draw.line((x1 + 14, div_y, x2 - 14, div_y), fill=(51, 65, 85), width=1)
+
+        nm = (c.get("card_name") or "Card")
+        max_chars = 26 if n <= 3 else 20
+        if len(nm) > max_chars:
+            nm = nm[: max_chars - 1] + "…"
+        draw.text((x1 + 14, div_y + 10), nm, font=f_card, fill=(248, 250, 252))
+
+        comp = (c.get("submission_company") or "").strip()
+        gr = (c.get("actual_grade") or c.get("status") or "").strip()
+        badge_txt = f"{comp} {gr}".strip()[:22]
+        _draw_round_rect(draw, (x1 + 14, div_y + 40, min(x2 - 14, x1 + 14 + max(110, len(badge_txt) * 10 + 18)), div_y + 68), 8, fill=theme["card"], outline=theme["accent"], width=1)
+        draw.text((x1 + 22, div_y + 45), badge_txt, font=f_grade, fill=theme["accent"])
+
+        val = c.get("sold_price") if c.get("status") == "Sold" and c.get("sold_price") is not None else c.get("market_value")
+        val_txt = _fmt_money(val) if val is not None else "N/A"
+        cost = float(c.get("acquisition_cost") or 0) + float(c.get("grading_cost") or 0) + float(c.get("shipping_cost") or 0)
+        draw.text((x1 + 14, div_y + 78), val_txt, font=f_val, fill=theme["gem"])
+
+        if val is not None:
+            prof = float(val) - cost
+            p_color = (74, 222, 128) if prof >= 0 else (248, 113, 113)
+            p_txt = f"{'+' if prof >= 0 else ''}{_fmt_money(prof)}"
+            draw.text((x2 - 14 - max(70, len(p_txt) * 9), div_y + 84), p_txt, font=f_profit, fill=p_color)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()

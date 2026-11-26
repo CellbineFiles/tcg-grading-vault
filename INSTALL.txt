@@ -1,5 +1,5 @@
 ======================================================================
-  TCG GRADING VAULT (v0.73) — INSTALLATION & SETUP GUIDE
+  TCG GRADING VAULT (v0.91) — INSTALLATION & SETUP GUIDE
 ======================================================================
 
 100% local TCG grading, cert scan, market value, and eBay bookkeeping
