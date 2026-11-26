@@ -7,8 +7,9 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-APP_VERSION = "0.91"
 SOURCE_DIR = Path(__file__).resolve().parent
+_VER_FILE = SOURCE_DIR / "version.txt"
+APP_VERSION = _VER_FILE.read_text("utf-8").strip() if _VER_FILE.exists() else "0.93.2"
 ICON_NAME = "static/vault.ico"
 
 
@@ -420,15 +421,22 @@ class InstallerWizard:
         # Update version banner
         if (target / "app.py").exists():
             vf = target / "version.txt"
-            if vf.exists():
-                cur_v = vf.read_text("utf-8").strip()
+            _, reg_v = detect_existing_install()
+            file_v = vf.read_text("utf-8").strip() if vf.exists() else ""
+            if target.resolve() == SOURCE_DIR.resolve() and reg_v and reg_v != APP_VERSION:
+                cur_v = reg_v
             else:
-                _, reg_v = detect_existing_install()
-                cur_v = reg_v or "0.70 or earlier"
-            self.ver_lbl.config(
-                text=f"Existing install detected: v{cur_v}  →  Installing / Updating to v{APP_VERSION} (your data/ folder will be kept)"
-            )
-            self.btn_install.config(text=f"Update to v{APP_VERSION}")
+                cur_v = file_v or reg_v or "0.70 or earlier"
+            if cur_v == APP_VERSION:
+                self.ver_lbl.config(
+                    text=f"Existing install detected: v{cur_v}  —  Reinstalling / Repairing v{APP_VERSION} (your data/ folder will be kept)"
+                )
+                self.btn_install.config(text=f"Reinstall / Repair v{APP_VERSION}")
+            else:
+                self.ver_lbl.config(
+                    text=f"Existing install detected: v{cur_v}  →  Installing / Updating to v{APP_VERSION} (your data/ folder will be kept)"
+                )
+                self.btn_install.config(text=f"Update to v{APP_VERSION}")
         else:
             self.ver_lbl.config(text=f"Fresh Installation: TCG Grading Vault v{APP_VERSION}")
             self.btn_install.config(text="Install Now")
@@ -561,6 +569,10 @@ class InstallerWizard:
                 shutil.copytree(item, dest, dirs_exist_ok=True, copy_function=_force_copy)
             else:
                 _force_copy(item, dest)
+        try:
+            (target_dir / "version.txt").write_text(f"{APP_VERSION}\n", encoding="utf-8")
+        except Exception:
+            pass
 
     def start_install(self):
         if self.running:

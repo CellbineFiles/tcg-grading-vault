@@ -79,19 +79,28 @@ def _paste_card_image(canvas: Image.Image, img_path: Optional[Path], box: tuple,
         return False
 
 
-def _draw_stat_box(draw: ImageDraw.ImageDraw, box, label: str, value: str, sub: str, bg_color, accent_color, val_color=(241, 245, 249)):
+def _draw_stat_box(draw: ImageDraw.ImageDraw, box, label: str, value: str, sub: str, bg_color, accent_color, val_color=(241, 245, 249), right_stat=None):
     x1, y1, x2, y2 = box
     _draw_round_rect(draw, box, 16, fill=bg_color, outline=(148, 163, 184, 60), width=2)
     draw.line([(x1 + 16, y1 + 2), (x2 - 16, y1 + 2)], fill=accent_color, width=4)
 
     f_lbl = _load_font(16, bold=True)
-    f_val = _load_font(34, bold=True)
-    f_sub = _load_font(16, bold=False)
+    f_val = _load_font(44 if not right_stat else 40, bold=True)
+    f_sub = _load_font(15 if len(sub or "") > 36 else 17, bold=False)
 
-    draw.text((x1 + 20, y1 + 18), label.upper(), font=f_lbl, fill=(148, 163, 184))
-    draw.text((x1 + 20, y1 + 48), value, font=f_val, fill=val_color)
+    draw.text((x1 + 20, y1 + 15), label.upper(), font=f_lbl, fill=(148, 163, 184))
+    draw.text((x1 + 20, y1 + 42), value, font=f_val, fill=val_color)
     if sub:
-        draw.text((x1 + 20, y1 + 96), sub[:42], font=f_sub, fill=(148, 163, 184))
+        draw.text((x1 + 20, y1 + 98), sub[:48], font=f_sub, fill=(148, 163, 184))
+
+    if right_stat:
+        r_lbl, r_val, r_sub = right_stat
+        mid_x = x1 + int((x2 - x1) * 0.54)
+        draw.line([(mid_x, y1 + 20), (mid_x, y2 - 18)], fill=(51, 65, 85), width=2)
+        draw.text((mid_x + 18, y1 + 15), r_lbl.upper(), font=_load_font(15, bold=True), fill=accent_color)
+        draw.text((mid_x + 18, y1 + 42), r_val, font=_load_font(36, bold=True), fill=val_color)
+        if r_sub:
+            draw.text((mid_x + 18, y1 + 98), r_sub[:22], font=_load_font(17, bold=True), fill=(203, 213, 225))
 
 
 def generate_card_infographic(card: dict, uploads_dir: Path, theme_name: str = "water") -> bytes:
@@ -226,6 +235,79 @@ def generate_card_infographic(card: dict, uploads_dir: Path, theme_name: str = "
     return buf.getvalue()
 
 
+def _us_federal_holidays(year: int) -> set:
+    from datetime import date, timedelta
+    holidays = set()
+
+    def add_observed(m: int, d: int):
+        dt = date(year, m, d)
+        if dt.weekday() == 5:  # Sat -> Fri
+            dt = dt - timedelta(days=1)
+        elif dt.weekday() == 6:  # Sun -> Mon
+            dt = dt + timedelta(days=1)
+        holidays.add(dt)
+
+    def nth_weekday(m: int, weekday: int, n: int):
+        first = date(year, m, 1)
+        offset = (weekday - first.weekday()) % 7
+        return first + timedelta(days=offset + (n - 1) * 7)
+
+    def last_weekday(m: int, weekday: int):
+        if m == 12:
+            last = date(year, 12, 31)
+        else:
+            last = date(year, m + 1, 1) - timedelta(days=1)
+        offset = (last.weekday() - weekday) % 7
+        return last - timedelta(days=offset)
+
+    add_observed(1, 1)
+    holidays.add(nth_weekday(1, 0, 3))
+    holidays.add(nth_weekday(2, 0, 3))
+    holidays.add(last_weekday(5, 0))
+    add_observed(6, 19)
+    add_observed(7, 4)
+    holidays.add(nth_weekday(9, 0, 1))
+    holidays.add(nth_weekday(10, 0, 2))
+    add_observed(11, 11)
+    holidays.add(nth_weekday(11, 3, 4))
+    add_observed(12, 25)
+    return holidays
+
+
+def _calc_grading_days(start_date_str: str, end_date_str: str = ""):
+    from datetime import date, timedelta
+    s_str = (start_date_str or "").strip()
+    e_str = (end_date_str or "").strip()
+    if not s_str:
+        return None
+    try:
+        start = date.fromisoformat(s_str[:10])
+    except Exception:
+        return None
+    stopped = False
+    if e_str:
+        try:
+            end = date.fromisoformat(e_str[:10])
+            stopped = True
+        except Exception:
+            end = date.today()
+    else:
+        end = date.today()
+    if start > end:
+        return {"biz": 0, "cal": 0, "stopped": stopped, "start": s_str[:10], "end": e_str[:10] if stopped else ""}
+    cal = (end - start).days
+    hols = set()
+    for yr in range(start.year, end.year + 2):
+        hols |= _us_federal_holidays(yr)
+    biz = 0
+    cur = start + timedelta(days=1)
+    while cur <= end:
+        if cur.weekday() < 5 and cur not in hols:
+            biz += 1
+        cur += timedelta(days=1)
+    return {"biz": biz, "cal": cal, "stopped": stopped, "start": s_str[:10], "end": e_str[:10] if stopped else ""}
+
+
 def generate_summary_infographic(
     title: str,
     subtitle: str,
@@ -235,9 +317,12 @@ def generate_summary_infographic(
     uploads_dir: Path,
     theme_name: str = "water",
     company_badge: str = "",
+    grading_started_date: str = "",
+    grading_finished_date: str = "",
+    featured_label: str = "FEATURED SLABS",
 ) -> bytes:
     theme = THEMES.get(theme_name, THEMES["water"])
-    W, H = 1280, 840
+    W, H = 1360, 920
     img = Image.new("RGB", (W, H), theme["bg"])
     draw = ImageDraw.Draw(img)
 
@@ -255,11 +340,11 @@ def generate_summary_infographic(
         x_start = 170
 
     draw.text((x_start, 50), title[:38], font=f_title, fill=(241, 245, 249))
-    draw.text((60, 102), subtitle[:80], font=f_sub, fill=(148, 163, 184))
+    draw.text((60, 102), subtitle[:86], font=f_sub, fill=(148, 163, 184))
     draw.text((W - 290, 58), "TCG GRADING VAULT", font=f_kicker, fill=theme["accent"])
 
     # 3x2 Stat Cards
-    bw = 370
+    bw = 396
     bh = 138
     gap_x = 25
     gap_y = 20
@@ -267,55 +352,126 @@ def generate_summary_infographic(
 
     cards_spec = [
         ("COMPLETED / IN GRADING", f"{stats.get('completed_grading', 0)} / {stats.get('still_grading', 0)}", f"{stats.get('total_cards', 0)} total cards", theme["accent"], (241, 245, 249)),
-        ("GEM RATE (10s)", f"{stats.get('gem_rate', 0)}%", f"{stats.get('gem_10_count', 0)} of {stats.get('graded_with_grade_count', 0)} graded hit 10", theme["gem"], theme["gem"]),
+        ("GEM RATE (10s)", f"{stats.get('gem_rate', 0)}%", f"{stats.get('gem_10_count', 0)} of {stats.get('graded_with_grade_count', 0)} hit 10", theme["gem"], theme["gem"]),
         ("UPFRONT TOTAL COSTS", _fmt_money(stats.get("total_collective_cost", 0)), f"Raw {_fmt_money(stats.get('total_acquisition_cost', 0))} • Grade {_fmt_money(stats.get('total_grading_cost', 0))}", (148, 163, 184), (241, 245, 249)),
         ("TOTAL SOLD REVENUE", _fmt_money(stats.get("total_sold_revenue", 0)), f"{stats.get('sold_cards', 0)} cards sold", (59, 130, 246), (96, 165, 250)),
         ("REALIZED PROFIT (SOLD)", _fmt_money(stats.get("realized_profit", 0)), (f"Realized ROI: {float(stats.get('realized_roi_pct') or 0):+.1f}% • Overall: {float(stats.get('overall_roi_pct') or 0):+.1f}%" if stats.get("overall_roi_pct") is not None or stats.get("realized_roi_pct") is not None else "Sold revenue minus sold card costs"), (16, 185, 129) if float(stats.get("realized_profit", 0)) >= 0 else (239, 68, 68), (16, 185, 129) if float(stats.get("realized_profit", 0)) >= 0 else (239, 68, 68)),
         ("EST. GRADED VALUE (UNSOLD)", _fmt_money(stats.get("total_market_value_unsold", 0)), (f"Unsold Est. ROI: {float(stats.get('unsold_est_roi_pct') if stats.get('unsold_est_roi_pct') is not None else (stats.get('est_roi_pct') or 0)):+.1f}% • Slab market value" if (stats.get("unsold_est_roi_pct") is not None or stats.get("est_roi_pct") is not None) else "Tracked current slab market value"), theme["accent"], theme["accent"]),
     ]
 
+    pristine_item = next((b for b in (breakdown or []) if str(b.get("grade", "")).strip().lower() == "pristine 10" and int(b.get("count", 0)) > 0), None)
     for idx, (lbl, val, sub, ac, vc) in enumerate(cards_spec):
         row = idx // 3
         col = idx % 3
         x1 = 60 + col * (bw + gap_x)
         y1 = top_y + row * (bh + gap_y)
-        _draw_stat_box(draw, (x1, y1, x1 + bw, y1 + bh), lbl, val, sub, theme["bg"], ac, val_color=vc)
+        r_stat = None
+        if idx == 1 and pristine_item:
+            p_cnt = int(pristine_item.get("count", 0))
+            p_pct = pristine_item.get("pct", 0)
+            r_stat = ("PRISTINE 10s", f"{p_pct}%", f"{p_cnt} card{'' if p_cnt == 1 else 's'}")
+        _draw_stat_box(draw, (x1, y1, x1 + bw, y1 + bh), lbl, val, sub, theme["bg"], ac, val_color=vc, right_stat=r_stat)
 
-    # Bottom Left: Grade Breakdown Bars
-    by1 = 480
-    _draw_round_rect(draw, (60, by1, 790, H - 54), 18, fill=theme["bg"], outline=(51, 65, 85), width=2)
-    draw.text((84, by1 + 20), "GRADE BREAKDOWN", font=_load_font(18, bold=True), fill=theme["accent"])
+    by1 = 472
+    by2 = H - 52
+    gd = _calc_grading_days(grading_started_date, grading_finished_date)
+
+    if gd is not None:
+        # 3-Column Bottom Row: Grade Breakdown (60..476) | Grading Turnaround (496..796) | Featured Slabs (816..1300)
+        gb_x1, gb_x2 = 60, 476
+        dt_x1, dt_x2 = 496, 796
+        fs_x1, fs_x2 = 816, W - 60
+    else:
+        # 2-Column Bottom Row: Grade Breakdown (60..796) | Featured Slabs (816..1300)
+        gb_x1, gb_x2 = 60, 796
+        fs_x1, fs_x2 = 816, W - 60
+
+    # Bottom Col 1: Grade Breakdown Bars
+    _draw_round_rect(draw, (gb_x1, by1, gb_x2, by2), 18, fill=theme["bg"], outline=(51, 65, 85), width=2)
+    draw.text((gb_x1 + 22, by1 + 20), "GRADE BREAKDOWN", font=_load_font(18, bold=True), fill=theme["accent"])
 
     if breakdown:
-        f_g = _load_font(18, bold=True)
-        bar_y = by1 + 60
-        for item in breakdown[:6]:
-            g_lbl = f"{item['grade']}"[:14]
+        f_g = _load_font(16 if gd else 18, bold=True)
+        bar_x1 = gb_x1 + (134 if gd else 180)
+        bar_x2 = gb_x2 - (108 if gd else 150)
+        bar_w = max(80, bar_x2 - bar_x1)
+        bar_y = by1 + 58
+        max_rows = min(7, len(breakdown))
+        row_step = min(46, max(36, (by2 - bar_y - 16) // max(1, max_rows)))
+        for item in breakdown[:max_rows]:
+            g_lbl = f"{item['grade']}"[:12 if gd else 14]
             pct = float(item["pct"])
             cnt = item["count"]
             color = theme["gem"] if item.get("is_gem") else theme["accent"]
-            draw.text((84, bar_y), g_lbl, font=f_g, fill=(241, 245, 249))
-            _draw_round_rect(draw, (240, bar_y + 4, 640, bar_y + 24), 8, fill=(30, 41, 59))
-            fill_w = max(12, int(400 * (pct / 100.0)))
-            _draw_round_rect(draw, (240, bar_y + 4, 240 + fill_w, bar_y + 24), 8, fill=color)
-            draw.text((655, bar_y), f"{pct}% ({cnt})", font=f_g, fill=(203, 213, 225))
-            bar_y += 42
+            draw.text((gb_x1 + 22, bar_y), g_lbl, font=f_g, fill=(241, 245, 249))
+            _draw_round_rect(draw, (bar_x1, bar_y + 3, bar_x2, bar_y + 21), 8, fill=(30, 41, 59))
+            fill_w = max(10, int(bar_w * (pct / 100.0)))
+            _draw_round_rect(draw, (bar_x1, bar_y + 3, bar_x1 + fill_w, bar_y + 21), 8, fill=color)
+            draw.text((bar_x2 + 10, bar_y), f"{pct}% ({cnt})", font=f_g, fill=(203, 213, 225))
+            bar_y += row_step
     else:
-        draw.text((84, by1 + 80), "No graded cards recorded yet.", font=_load_font(20), fill=(148, 163, 184))
+        draw.text((gb_x1 + 22, by1 + 80), "No graded cards recorded yet.", font=_load_font(18), fill=(148, 163, 184))
 
-    # Bottom Right: Preview Slabs
-    _draw_round_rect(draw, (815, by1, W - 60, H - 54), 18, fill=theme["bg"], outline=(51, 65, 85), width=2)
-    draw.text((838, by1 + 20), "FEATURED SLABS", font=_load_font(18, bold=True), fill=theme["accent"])
+    # Bottom Col 2 (when grading dates exist): Grading Turnaround Card
+    if gd is not None:
+        _draw_round_rect(draw, (dt_x1, by1, dt_x2, by2), 18, fill=theme["bg"], outline=theme["accent"], width=2)
+        draw.line([(dt_x1 + 18, by1 + 2), (dt_x2 - 18, by1 + 2)], fill=theme["accent"], width=4)
+        status_hdr = "GRADING COMPLETED" if gd["stopped"] else "GRADING TURNAROUND"
+        draw.text((dt_x1 + 22, by1 + 20), status_hdr, font=_load_font(17, bold=True), fill=theme["accent"])
 
-    p_idx = 0
-    for rel in preview_paths[:3]:
+        # Business Days Box (Accent Highlighted, Hero Number Left + Label Right)
+        b_box = (dt_x1 + 18, by1 + 56, dt_x2 - 18, by1 + 196)
+        _draw_round_rect(draw, b_box, 14, fill=theme["card"], outline=theme["accent"], width=2)
+        biz_str = str(gd["biz"])
+        f_biz = _load_font(62 if len(biz_str) <= 2 else 52, bold=True)
+        draw.text((dt_x1 + 34, by1 + 88), biz_str, font=f_biz, fill=theme["accent"])
+        draw.text((dt_x1 + 124, by1 + 88), f"BUSINESS DAY{'' if gd['biz'] == 1 else 'S'}", font=_load_font(16, bold=True), fill=(241, 245, 249))
+        draw.text((dt_x1 + 124, by1 + 114), "Excl. weekends &", font=_load_font(14), fill=(148, 163, 184))
+        draw.text((dt_x1 + 124, by1 + 134), "US federal holidays", font=_load_font(14), fill=(148, 163, 184))
+
+        # Calendar Days Box (Hero Number Left + Label Right)
+        c_box = (dt_x1 + 18, by1 + 210, dt_x2 - 18, by1 + 340)
+        _draw_round_rect(draw, c_box, 14, fill=theme["card"], outline=(51, 65, 85), width=2)
+        cal_str = str(gd["cal"])
+        f_cal = _load_font(58 if len(cal_str) <= 2 else 48, bold=True)
+        draw.text((dt_x1 + 34, by1 + 238), cal_str, font=f_cal, fill=(241, 245, 249))
+        draw.text((dt_x1 + 124, by1 + 246), f"CALENDAR DAY{'' if gd['cal'] == 1 else 'S'}", font=_load_font(16, bold=True), fill=(241, 245, 249))
+        draw.text((dt_x1 + 124, by1 + 272), "Total elapsed days", font=_load_font(14), fill=(148, 163, 184))
+
+        # Dates footer
+        f_dt = _load_font(13, bold=True)
+        draw.text((dt_x1 + 18, by2 - 34), f"Start: {gd['start']}", font=f_dt, fill=(203, 213, 225))
+        end_lbl = f"End: {gd['end']}" if gd["end"] else "Active"
+        draw.text((dt_x2 - 18, by2 - 34), end_lbl, font=f_dt, fill=theme["accent"] if not gd["end"] else (203, 213, 225), anchor="ra")
+
+    # Bottom Right: Maximized Featured Slabs
+    _draw_round_rect(draw, (fs_x1, by1, fs_x2, by2), 18, fill=theme["bg"], outline=(51, 65, 85), width=2)
+    draw.text((fs_x1 + 22, by1 + 20), featured_label, font=_load_font(18, bold=True), fill=theme["accent"])
+
+    valid_paths = []
+    for rel in preview_paths:
         p = uploads_dir / rel if rel and not rel.startswith("http") else None
         if p and p.exists():
-            px1 = 838 + p_idx * 124
-            _paste_card_image(img, p, (px1, by1 + 64, px1 + 114, by1 + 234), radius=10)
-            p_idx += 1
-    if p_idx == 0:
-        draw.text((838, by1 + 120), "Upload or pull slab scans\nto feature them here", font=_load_font(18), fill=(148, 163, 184))
+            valid_paths.append(p)
+        if len(valid_paths) >= 3:
+            break
+
+    if valid_paths:
+        inner_x1 = fs_x1 + 18
+        inner_x2 = fs_x2 - 18
+        inner_y1 = by1 + 56
+        inner_y2 = by2 - 18
+        avail_w = inner_x2 - inner_x1
+        n = len(valid_paths)
+        gap_s = 14
+        slot_w = min(240, (avail_w - gap_s * (n - 1)) // n)
+        total_used_w = n * slot_w + (n - 1) * gap_s
+        start_x = inner_x1 + (avail_w - total_used_w) // 2
+        for i, p in enumerate(valid_paths):
+            sx1 = start_x + i * (slot_w + gap_s)
+            _paste_card_image(img, p, (sx1, inner_y1, sx1 + slot_w, inner_y2), radius=12)
+    else:
+        draw.text((fs_x1 + 24, by1 + 140), "Upload raw card photos or\npull slab scans to feature here", font=_load_font(18), fill=(148, 163, 184))
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")

@@ -20,7 +20,7 @@ os.chdir(APP_DIR)
 if os.name == "nt":
     try:
         import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("TCGGradingVault.LocalApp.0.91")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("TCGGradingVault.LocalApp.0.93.2")
     except Exception:
         pass
 

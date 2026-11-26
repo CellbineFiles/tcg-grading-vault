@@ -630,7 +630,7 @@ body {
 /* Tiles Grid */
 .tiles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(275px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(305px, 1fr));
   gap: 16px;
 }
 
@@ -1642,16 +1642,27 @@ body {
   min-height: 235px;
 }
 .tile-top {
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
+  gap: 5px;
+  align-items: center;
 }
 .tile-top > div {
-  flex-wrap: wrap;
-  max-width: 100%;
+  flex-wrap: nowrap;
+  gap: 4px !important;
+  min-width: 0;
+}
+.tile-top .badge {
+  padding: 3px 7px;
+  font-size: 11px;
+  flex-shrink: 0;
 }
 .tile-top .pill {
-  font-size: 11px;
-  padding: 2px 8px;
+  font-size: 10.5px;
+  padding: 2px 6px;
+}
+.tile-top .btn-sub-delete-tile {
+  padding: 2px 4px;
+  flex-shrink: 0;
 }
 .tile-thumbs {
   height: 86px;
@@ -2497,4 +2508,191 @@ body {
   padding: 5px 8px;
   text-align: center;
   margin: 2px 0;
+}
+
+.pill-grading-days {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--text);
+  font-weight: 700;
+}
+.sub-stats-strip .grading-days-chip {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+}
+
+/* Top-Right Infographic Grading Timer Card */
+.sub-panel-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 22px;
+  flex-wrap: nowrap;
+}
+.sub-header-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+}
+.sub-actions-row {
+  width: 100%;
+}
+.grading-timer-card {
+  flex: 0 0 320px;
+  width: 320px;
+  align-self: stretch;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 15%, var(--surface-2)), var(--bg));
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, var(--border));
+  border-radius: 13px;
+  padding: 13px 15px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28), 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent) inset;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+}
+.grading-timer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.grading-timer-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.grading-timer-card.is-stopped .grading-timer-title {
+  color: var(--primary);
+}
+.grading-timer-edit-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+.grading-timer-edit-btn:hover {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 18%, var(--surface-2));
+}
+.grading-timer-metrics {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.grading-timer-stat {
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+}
+.grading-timer-stat.is-primary {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg));
+}
+.grading-timer-val {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--text);
+}
+.grading-timer-stat.is-primary .grading-timer-val {
+  color: var(--primary);
+}
+.grading-timer-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.grading-timer-foot {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.grading-timer-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 6px 0;
+}
+@media (max-width: 960px) {
+  .sub-panel-header {
+    flex-wrap: wrap;
+  }
+  .grading-timer-card {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
+
+/* Standardized 2-row Home Card Header */
+.tile-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tile-top-badges {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+.tile-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+.tile-days-slot {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.tile-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.pill-grading-days {
+  border: 1px solid color-mix(in srgb, var(--primary) 55%, var(--border));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 18%, var(--surface-2)), color-mix(in srgb, var(--primary) 8%, var(--bg)));
+  color: var(--text);
+  font-weight: 700;
+  font-size: 11px;
+  padding: 3px 9px;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 15%, transparent);
 }

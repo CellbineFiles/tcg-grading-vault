@@ -256,6 +256,20 @@ const PAGE_HELP_CONTENT = {
   ],
   "versions": [
     {
+      title: "v0.93.2 — Stop Import Keep/Delete Race Fix & Instant Request Abort",
+      items: [
+        "Removed the legacy auto-delete cancel handler on Smart Import so clicking Stop Import no longer deletes the submission before the Keep vs. Delete prompt appears.",
+        "Added AbortController support to batch cert pulls and Smart Import so stopping cancels in-flight requests immediately instead of waiting 15–20 seconds.",
+      ],
+    },
+    {
+      title: "v0.93.1 — Smart Import SQL Fix & Setup Wizard Registry Version Fix, Multi-Part Versions & Order # Search Fix",
+      items: [
+        "Added a top-right Infographic Grading Timer card in Submission Detail showing Business Days, Calendar Days, an info tooltip, and a dedicated Edit Dates modal (keeping date fields in New Submission creation).",
+        "Fixed Home search by Order / Submission # (including comma-separated order numbers) and full multi-part version display (0.xx.xx.x) across the Setup Wizard, About modal, and Update Checker.",
+      ],
+    },
+    {
       title: "v0.80 — Live Auction Monitor, Streamer Showcase, Multi-Card Share, In-App Tabs & Updates",
       items: [
         "Added Live Auction Monitor (🔨 Auctions) for eBay & Fanatics Collect with 60s auto-refresh, card size slider, split-screen listing viewer, HTML+photo report download, and 1-click Match & Mark Sold into your vault.",
@@ -308,7 +322,7 @@ function renderHelpTab(tabId) {
   const welcomeToggleHtml = active === "versions"
     ? `<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;margin-bottom:12px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border);cursor:pointer;font-size:13px;">
         <input type="checkbox" id="howto-show-welcome-cb" ${localStorage.getItem("tcg_vault_welcome_disabled") !== "1" ? "checked" : ""} />
-        <span>Show "What's New" welcome popup when a new update is launched for the first time</span>
+        <span>Show "What's New" welcome popup on app startup</span>
       </label>`
     : "";
   body.innerHTML = welcomeToggleHtml + PAGE_HELP_CONTENT[active]
@@ -341,6 +355,83 @@ function applyTheme(themeName) {
   document.querySelectorAll(".theme-option").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.themeChoice === chosen);
   });
+}
+
+
+function _isoDateLocal(dt) {
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getUsFederalHolidays(year) {
+  const set = new Set();
+  const addObserved = (m, d) => {
+    const dt = new Date(year, m - 1, d);
+    const dow = dt.getDay();
+    if (dow === 6) dt.setDate(dt.getDate() - 1); // Sat -> Fri
+    else if (dow === 0) dt.setDate(dt.getDate() + 1); // Sun -> Mon
+    set.add(_isoDateLocal(dt));
+  };
+  const nthWeekday = (m, weekday, n) => {
+    const first = new Date(year, m - 1, 1);
+    const offset = (weekday - first.getDay() + 7) % 7;
+    return _isoDateLocal(new Date(year, m - 1, 1 + offset + (n - 1) * 7));
+  };
+  const lastWeekday = (m, weekday) => {
+    const last = new Date(year, m, 0);
+    const offset = (last.getDay() - weekday + 7) % 7;
+    return _isoDateLocal(new Date(year, m, -offset));
+  };
+  addObserved(1, 1);   // New Year's Day
+  set.add(nthWeekday(1, 1, 3));  // MLK Jr. Day
+  set.add(nthWeekday(2, 1, 3));  // Presidents' Day
+  set.add(lastWeekday(5, 1));    // Memorial Day
+  addObserved(6, 19);  // Juneteenth
+  addObserved(7, 4);   // Independence Day
+  set.add(nthWeekday(9, 1, 1));  // Labor Day
+  set.add(nthWeekday(10, 1, 2)); // Columbus Day
+  addObserved(11, 11); // Veterans Day
+  set.add(nthWeekday(11, 4, 4)); // Thanksgiving
+  addObserved(12, 25); // Christmas Day
+  return set;
+}
+
+function calcGradingDays(startDateStr, endDateStr = "") {
+  if (!startDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(startDateStr.trim())) return null;
+  const [y, m, d] = startDateStr.trim().split("-").map(Number);
+  const start = new Date(y, m - 1, d);
+  let end;
+  let stopped = false;
+  if (endDateStr && /^\d{4}-\d{2}-\d{2}$/.test(endDateStr.trim())) {
+    const [ey, em, ed] = endDateStr.trim().split("-").map(Number);
+    end = new Date(ey, em - 1, ed);
+    stopped = true;
+  } else {
+    const now = new Date();
+    end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return { biz: 0, cal: 0, stopped };
+  const holidayCache = new Map();
+  const isHoliday = (dt) => {
+    const yr = dt.getFullYear();
+    if (!holidayCache.has(yr)) {
+      const merged = new Set([...getUsFederalHolidays(yr), ...getUsFederalHolidays(yr + 1)]);
+      holidayCache.set(yr, merged);
+    }
+    return holidayCache.get(yr).has(_isoDateLocal(dt));
+  };
+  const cal = Math.round((end - start) / 86400000);
+  let biz = 0;
+  const cur = new Date(start);
+  cur.setDate(cur.getDate() + 1);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6 && !isHoliday(cur)) biz++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return { biz, cal, stopped };
 }
 
 function fmtMoney(val) {
@@ -801,6 +892,10 @@ async function loadHome(pushHistory = true, scrollMode = "top") {
     if (g) g.innerHTML = `<div class="panel" style="grid-column:1/-1;color:#f87171;">Error loading database: ${escapeHtml(err.message)}</div>`;
     return;
   }
+  state.submissions = subs || [];
+  if (company === "ALL" && status === "ALL") {
+    state.allSubmissions = subs || [];
+  }
 
   $("stat-completed").textContent = stats.completed_grading;
   $("stat-total-cards").textContent = `${stats.total_cards} total cards tracked`;
@@ -909,16 +1004,27 @@ async function loadHome(pushHistory = true, scrollMode = "top") {
     const gemPill = s.graded_with_grade_count > 0
       ? `<span class="pill pill-gem">Gem ${s.gem_rate}%</span>`
       : "";
+    const gd = calcGradingDays(s.grading_started_date, s.grading_finished_date);
+    const gradingDaysPill = gd
+      ? `<span class="pill pill-grading-days" title="Grading started ${escapeHtml(s.grading_started_date)}${s.grading_finished_date ? ` • Finished ${escapeHtml(s.grading_finished_date)}` : ""}">${gd.stopped ? "✓" : "⏱️"} ${gd.biz} biz • ${gd.cal} cal days</span>`
+      : "";
 
     tile.innerHTML = `
       <div>
-        <div class="tile-top">
-          <span class="badge badge-${s.submit_channel === "eBay" ? "eBay" : s.company}">${s.submit_channel === "eBay" ? "eBay" : s.company}</span>
-          <div style="display:flex;gap:6px;align-items:center;">
-            ${gemPill}
-            <span class="pill">${s.status}</span>
-            <button type="button" class="btn-sub-delete-tile btn-sub-rename-tile" data-sub-id="${s.id}" title="Rename Submission">${SVG_PENCIL}</button>
-            <button type="button" class="btn-sub-delete-tile btn-sub-del-action" data-sub-id="${s.id}" title="Delete Submission">${SVG_TRASH}</button>
+        <div class="tile-header">
+          <div class="tile-top">
+            <span class="badge badge-${s.submit_channel === "eBay" ? "eBay" : s.company}">${s.submit_channel === "eBay" ? "eBay" : s.company}</span>
+            <div class="tile-top-badges">
+              ${gemPill}
+              <span class="pill">${s.status}</span>
+            </div>
+          </div>
+          <div class="tile-sub-row">
+            <div class="tile-days-slot">${gradingDaysPill}</div>
+            <div class="tile-card-actions">
+              <button type="button" class="btn-sub-delete-tile btn-sub-rename-tile" data-sub-id="${s.id}" title="Rename Submission">${SVG_PENCIL}</button>
+              <button type="button" class="btn-sub-delete-tile btn-sub-del-action" data-sub-id="${s.id}" title="Delete Submission">${SVG_TRASH}</button>
+            </div>
           </div>
         </div>
         <div class="tile-title">${escapeHtml(s.title)}</div>
@@ -1150,7 +1256,8 @@ function applyAllCardsFilterAndSort() {
         c.card_name, c.set_name, c.card_number, c.card_year, c.actual_grade,
         c.cert_number, c.status, c.submission_title, c.submission_company, c.curated_date, c.notes,
       ].join(" ").toLowerCase();
-      return hay.includes(q);
+      const qNorm = q.replace(/^#+/, "").trim();
+      return hay.includes(q) || (qNorm && hay.includes(qNorm));
     });
   }
 
@@ -1182,8 +1289,46 @@ async function openSubmission(subId, pushHistory = true, scrollMode = "top") {
   badge.textContent = sub.company;
   badge.className = `badge badge-${sub.company}`;
   $("detail-sub-title").textContent = sub.title;
+  const subGd = calcGradingDays(sub.grading_started_date, sub.grading_finished_date);
   $("detail-sub-meta").textContent = `${sub.submitted_date || "No date"}${sub.submission_number ? ` • Order #${sub.submission_number}` : ""}${sub.submit_channel ? ` • via ${sub.submit_channel}` : ""}${sub.notes ? ` • ${sub.notes}` : ""}`;
   $("detail-sub-status").value = sub.status;
+
+  const timerCard = $("sub-grading-timer-card");
+  if (timerCard) {
+    timerCard.classList.toggle("is-stopped", Boolean(subGd && subGd.stopped));
+    const infoTip = `<span class="info-tip" data-tip="Business days exclude weekends and US federal holidays. Calendar days count every day from Date Grading Started until Date Grading Finished (or today if still in grading).">ⓘ</span>`;
+    const editBtn = `<button type="button" class="grading-timer-edit-btn" id="btn-edit-grading-dates" title="Edit Grading Start & Finish Dates">${SVG_PENCIL} Edit Dates</button>`;
+    if (subGd) {
+      timerCard.innerHTML = `
+        <div class="grading-timer-head">
+          <span class="grading-timer-title">${subGd.stopped ? "✓ Grading Completed" : "⏱️ Grading Turnaround"} ${infoTip}</span>
+          ${editBtn}
+        </div>
+        <div class="grading-timer-metrics">
+          <div class="grading-timer-stat is-primary">
+            <span class="grading-timer-val">${subGd.biz}</span>
+            <span class="grading-timer-lbl">Business Day${subGd.biz === 1 ? "" : "s"}</span>
+          </div>
+          <div class="grading-timer-stat">
+            <span class="grading-timer-val">${subGd.cal}</span>
+            <span class="grading-timer-lbl">Calendar Day${subGd.cal === 1 ? "" : "s"}</span>
+          </div>
+        </div>
+        <div class="grading-timer-foot">
+          <span>Started: <strong>${escapeHtml(sub.grading_started_date)}</strong></span>
+          <span>${sub.grading_finished_date ? `Finished: <strong>${escapeHtml(sub.grading_finished_date)}</strong>` : "Active timer"}</span>
+        </div>
+      `;
+    } else {
+      timerCard.innerHTML = `
+        <div class="grading-timer-head">
+          <span class="grading-timer-title">⏱️ Grading Turnaround ${infoTip}</span>
+          ${editBtn}
+        </div>
+        <div class="grading-timer-empty">No grading start date set yet. Click <strong>Edit Dates</strong> to start tracking business &amp; calendar days.</div>
+      `;
+    }
+  }
 
   const cards = sub.cards || [];
   const completed = cards.filter((c) => c.status !== "In Grading" && c.status !== "Not Submitted").length;
@@ -1323,7 +1468,8 @@ function applySubCardFilterAndSort() {
         c.card_name, c.set_name, c.card_number, c.card_year,
         c.actual_grade, c.cert_number, c.status, c.notes, c.curated_date,
       ].join(" ").toLowerCase();
-      return hay.includes(q);
+      const qNorm = q.replace(/^#+/, "").trim();
+      return hay.includes(q) || (qNorm && hay.includes(qNorm));
     });
   }
 
@@ -2153,6 +2299,7 @@ async function runBatchWithModal({ title, items, cancelLabel = "✕ Cancel", bat
   const cancelBtn = $("btn-cancel-import-modal");
 
   let cancelled = false;
+  const controller = new AbortController();
   if (titleEl) titleEl.textContent = title || "Processing...";
   if (statusEl) statusEl.textContent = `Starting (${items.length} item${items.length === 1 ? "" : "s"})...`;
   if (barEl) barEl.style.width = "0%";
@@ -2164,6 +2311,7 @@ async function runBatchWithModal({ title, items, cancelLabel = "✕ Cancel", bat
       cancelled = true;
       cancelBtn.disabled = true;
       if (statusEl) statusEl.textContent = "Stopping...";
+      controller.abort();
       if (onCancel) await onCancel();
     };
   }
@@ -2178,7 +2326,8 @@ async function runBatchWithModal({ title, items, cancelLabel = "✕ Cancel", bat
       const chunk = items.slice(i, i + BATCH);
       await Promise.all(chunk.map(async (item) => {
         if (cancelled) return;
-        const ok = await workerFn(item);
+        const ok = await workerFn(item, controller.signal);
+        if (cancelled && !ok) return;
         if (ok) successCount++;
         done++;
         if (!cancelled) {
@@ -2194,6 +2343,33 @@ async function runBatchWithModal({ title, items, cancelLabel = "✕ Cancel", bat
     if (cancelBtn) cancelBtn.onclick = null;
   }
   return { cancelled, done, successCount };
+}
+
+function askKeepOrDeleteOnStop({ title, message, keepLabel = "✅ Keep Completed Data", deleteLabel = "🗑️ Delete Completed Data" }) {
+  return new Promise((resolve) => {
+    const modal = $("stop-batch-choice-modal");
+    const tEl = $("stop-batch-title");
+    const mEl = $("stop-batch-msg");
+    const keepBtn = $("btn-stop-batch-keep");
+    const delBtn = $("btn-stop-batch-delete");
+    if (!modal || !keepBtn || !delBtn) {
+      resolve(confirm(`${message}\n\nClick OK to KEEP completed data, or Cancel to DELETE it.`) ? "keep" : "delete");
+      return;
+    }
+    if (tEl) tEl.textContent = title || "⏹️ Process Stopped";
+    if (mEl) mEl.textContent = message || "Do you want to keep what has completed so far, or delete the processed data?";
+    keepBtn.textContent = keepLabel;
+    delBtn.textContent = deleteLabel;
+    const cleanup = (choice) => {
+      modal.style.display = "none";
+      keepBtn.onclick = null;
+      delBtn.onclick = null;
+      resolve(choice);
+    };
+    keepBtn.onclick = () => cleanup("keep");
+    delBtn.onclick = () => cleanup("delete");
+    modal.style.display = "flex";
+  });
 }
 
 
@@ -2670,12 +2846,82 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     homeSearchTimer = setTimeout(async () => {
+      const ql = q.toLowerCase();
+      const qNorm = ql.replace(/^#+/, "").trim();
+      let subPool = state.allSubmissions && state.allSubmissions.length ? state.allSubmissions : (state.submissions || []);
+      if (!subPool.length) {
+        try {
+          subPool = await apiJson("/api/submissions");
+          state.allSubmissions = subPool;
+        } catch {}
+      }
+      const subMatches = (subPool || []).filter((s) => {
+        const subNums = String(s.submission_number || "")
+          .split(",")
+          .map((x) => x.trim().toLowerCase())
+          .filter(Boolean);
+        const numMatch = subNums.some((n) => n.includes(ql) || (qNorm && n.includes(qNorm))) ||
+          String(s.submission_number || "").toLowerCase().includes(ql);
+        return (
+          numMatch ||
+          (s.title || "").toLowerCase().includes(ql) ||
+          (s.company || "").toLowerCase().includes(ql)
+        );
+      });
       const matches = await apiJson(`/api/cards?q=${encodeURIComponent(q)}`);
       $("submissions-grid").style.display = "none";
       const box = $("home-card-results");
       box.style.display = "block";
-      box.innerHTML = `<div class="muted" style="margin-bottom:10px;font-size:13px;">Found <strong>${matches.length}</strong> matching card${matches.length === 1 ? "" : "s"} across all submissions:</div><div class="cards-list" id="home-search-cards-list"></div>`;
-      renderReadOnlyCardsList($("home-search-cards-list"), matches, `No cards match "${q}".`);
+      let html = "";
+      if (subMatches.length) {
+        html += `<div class="muted" style="margin-bottom:10px;font-size:13px;">Found <strong>${subMatches.length}</strong> matching submission${subMatches.length === 1 ? "" : "s"}:</div>`;
+        html += `<div class="tiles-grid" id="home-search-subs-grid" style="margin-bottom:18px;"></div>`;
+      }
+      if (matches.length || !subMatches.length) {
+        html += `<div class="muted" style="margin-bottom:10px;font-size:13px;">Found <strong>${matches.length}</strong> matching card${matches.length === 1 ? "" : "s"} across all submissions:</div><div class="cards-list" id="home-search-cards-list"></div>`;
+      }
+      box.innerHTML = html;
+      if (subMatches.length) {
+        const subGrid = $("home-search-subs-grid");
+        subMatches.forEach((s) => {
+          const gd = calcGradingDays(s.grading_started_date, s.grading_finished_date);
+          const gradingDaysPill = gd
+            ? `<span class="pill pill-grading-days">${gd.stopped ? "✓" : "⏱️"} ${gd.biz} biz • ${gd.cal} cal days</span>`
+            : "";
+          const gemPill = s.graded_with_grade_count > 0 ? `<span class="pill pill-gem">Gem ${s.gem_rate}%</span>` : "";
+          const thumbsHtml = (s.preview_images || []).length
+            ? s.preview_images.map((p) => `<img src="${resolveImgSrc(p)}" alt="Card" class="home-tile-thumb" />`).join("")
+            : `<div class="tile-thumbs-empty">No card photos yet</div>`;
+          const profitClass = s.realized_profit >= 0 ? "profit-pos" : "profit-neg";
+          const tile = document.createElement("div");
+          tile.className = "tile";
+          tile.innerHTML = `
+            <div>
+              <div class="tile-header">
+                <div class="tile-top">
+                  <span class="badge badge-${s.submit_channel === "eBay" ? "eBay" : s.company}">${s.submit_channel === "eBay" ? "eBay" : s.company}</span>
+                  <div class="tile-top-badges">
+                    ${gemPill}
+                    <span class="pill">${s.status}</span>
+                  </div>
+                </div>
+                ${gradingDaysPill ? `<div class="tile-sub-row"><div class="tile-days-slot">${gradingDaysPill}</div></div>` : ""}
+              </div>
+              <div class="tile-title">${escapeHtml(s.title)}</div>
+              <div class="tile-meta">${s.submitted_date || "No date"}${s.submission_number ? ` • #${escapeHtml(s.submission_number)}` : ""}${s.submit_channel ? ` • via ${escapeHtml(s.submit_channel)}` : ""}</div>
+              <div class="tile-thumbs">${thumbsHtml}</div>
+            </div>
+            <div class="tile-footer">
+              <span><strong>${s.card_count}</strong> cards</span>
+              <span>Cost <strong>${fmtMoney(s.total_cost)}</strong>${s.sold_count > 0 ? ` • <span class="${profitClass}">${fmtMoney(s.realized_profit)}</span>` : ""}</span>
+            </div>`;
+          tile.addEventListener("click", () => openSubmission(s.id));
+          subGrid.appendChild(tile);
+        });
+      }
+      if ($("home-search-cards-list")) {
+        renderReadOnlyCardsList($("home-search-cards-list"), matches, `No cards or submissions match "${q}".`);
+      }
     }, 180);
   });
 
@@ -2919,7 +3165,16 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("btn-close-help").addEventListener("click", () => ($("help-modal").style.display = "none"));
   $("btn-done-help").addEventListener("click", () => ($("help-modal").style.display = "none"));
-  $("btn-open-about")?.addEventListener("click", () => ($("about-modal").style.display = "flex"));
+  $("btn-open-about")?.addEventListener("click", async () => {
+    $("about-modal").style.display = "flex";
+    let ver = CURRENT_APP_VERSION;
+    try {
+      const vRes = await apiJson("/api/version");
+      if (vRes?.version) ver = String(vRes.version).replace(/^v/i, "").trim();
+    } catch {}
+    if ($("about-version-badge")) $("about-version-badge").textContent = `v${ver}`;
+    if ($("about-current-version")) $("about-current-version").textContent = `v${ver}`;
+  });
   $("btn-close-about")?.addEventListener("click", () => ($("about-modal").style.display = "none"));
   $("btn-done-about")?.addEventListener("click", () => ($("about-modal").style.display = "none"));
   
@@ -3239,16 +3494,31 @@ $("btn-about-versions")?.addEventListener("click", () => {
 
   async function runBatchCertPull(targets, btnEl, defaultLabel) {
     btnEl.disabled = true;
+    const snapshots = new Map();
+    const pulledCards = [];
+    for (const c of targets) {
+      snapshots.set(c.id, {
+        card_name: c.card_name || "",
+        card_year: c.card_year || "",
+        set_name: c.set_name || "",
+        card_number: c.card_number || "",
+        grade: c.grade || "",
+        cert_front_image: c.cert_front_image || "",
+        cert_back_image: c.cert_back_image || "",
+        cert_url: c.cert_url || "",
+      });
+    }
     const allHaveZip = targets.length > 0 && targets.every((c) => Boolean((c.psa_images_zip_url || "").trim()));
     const res = await runBatchWithModal({
       title: allHaveZip ? "Fast-Pulling PSA Zip Scans" : "Pulling Cert Scans",
       items: targets,
       cancelLabel: "✕ Stop Pulling",
       batchSize: allHaveZip ? 12 : 1,
-      workerFn: async (c) => {
+      workerFn: async (c, signal) => {
         try {
           const r = await apiJson(`/api/cards/${c.id}/fetch-cert`, {
             method: "POST",
+            signal,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               cert_number: c.cert_number,
@@ -3259,7 +3529,11 @@ $("btn-about-versions")?.addEventListener("click", () => {
               win_h: Math.round(window.outerHeight || window.innerHeight || 800),
             }),
           });
-          return Boolean(r.success);
+          if (r.success) {
+            pulledCards.push(c.id);
+            return true;
+          }
+          return false;
         } catch {
           return false;
         }
@@ -3267,9 +3541,35 @@ $("btn-about-versions")?.addEventListener("click", () => {
     });
     btnEl.disabled = false;
     btnEl.textContent = defaultLabel;
-    showToast(res.cancelled
-      ? `Stopped after ${res.done} cards (pulled ${res.successCount}).`
-      : `Finished ${targets.length} cards: pulled HQ data/scans for ${res.successCount}!`);
+    if (res.cancelled && pulledCards.length > 0) {
+      const choice = await askKeepOrDeleteOnStop({
+        title: "⏹️ Cert Scan Stopped",
+        message: `Stopped after ${res.done} cards (${pulledCards.length} scans/updates completed). Do you want to keep the pulled scans & card info, or delete/revert what was just pulled?`,
+        keepLabel: `✅ Keep ${pulledCards.length} Completed`,
+        deleteLabel: "🗑️ Delete Pulled Data",
+      });
+      if (choice === "delete") {
+        for (const cid of pulledCards) {
+          const snap = snapshots.get(cid);
+          if (snap) {
+            try {
+              await apiJson(`/api/cards/${cid}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(snap),
+              });
+            } catch (_) {}
+          }
+        }
+        showToast(`Stopped and reverted ${pulledCards.length} pulled cert scan${pulledCards.length === 1 ? "" : "s"}.`);
+      } else {
+        showToast(`Stopped after ${res.done} cards — kept ${pulledCards.length} pulled scan${pulledCards.length === 1 ? "" : "s"}.`);
+      }
+    } else {
+      showToast(res.cancelled
+        ? `Stopped after ${res.done} cards (0 pulled).`
+        : `Finished ${targets.length} cards: pulled HQ data/scans for ${res.successCount}!`);
+    }
     openSubmission(state.currentSubId, false, "preserve");
   }
 
@@ -3409,22 +3709,6 @@ $("btn-about-versions")?.addEventListener("click", () => {
   if ($("btn-wiz-create-from-certs")) {
     let importCancelled = false;
     let activeImportSubId = null;
-    if ($("btn-cancel-import-modal")) {
-      $("btn-cancel-import-modal").addEventListener("click", async () => {
-        importCancelled = true;
-        $("btn-cancel-import-modal").disabled = true;
-        $("imp-modal-status").textContent = "Cancelling & removing submission...";
-        if (activeImportSubId) {
-          try {
-            await apiJson(`/api/submissions/${activeImportSubId}`, { method: "DELETE" });
-          } catch (_) {}
-          activeImportSubId = null;
-        }
-        $("import-progress-modal").style.display = "none";
-        $("btn-cancel-import-modal").disabled = false;
-        showToast("Import cancelled and submission removed.");
-      });
-    }
 
     $("btn-wiz-create-from-certs").addEventListener("click", async () => {
       const company = $("sub-company").value.trim();
@@ -3465,12 +3749,13 @@ $("btn-about-versions")?.addEventListener("click", () => {
           const bRes = await runBatchWithModal({
             title: `Importing ${initRes.format_detected}`,
             items: createdCards,
-            cancelLabel: "✕ Cancel & Remove Sub",
+            cancelLabel: "✕ Stop Import",
             batchSize: allZip ? 12 : 1,
-            workerFn: async (item) => {
+            workerFn: async (item, signal) => {
               try {
                 const cRes = await apiJson(`/api/cards/${item.id}/fetch-cert`, {
                   method: "POST",
+                  signal,
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     cert_number: item.cert_number,
@@ -3486,17 +3771,29 @@ $("btn-about-versions")?.addEventListener("click", () => {
                 return false;
               }
             },
-            onCancel: async () => {
+          });
+          pulled = bRes.successCount;
+          if (bRes.cancelled) {
+            const choice = await askKeepOrDeleteOnStop({
+              title: "⏹️ Import Stopped",
+              message: `Import stopped after ${bRes.done} of ${createdCards.length} cards (${pulled} cert scans pulled). Do you want to keep the imported submission and completed data, or delete all imported data?`,
+              keepLabel: "✅ Keep Imported Data",
+              deleteLabel: "🗑️ Delete All Imported Data",
+            });
+            if (choice === "delete") {
               importCancelled = true;
               if (activeImportSubId) {
                 try { await apiJson(`/api/submissions/${activeImportSubId}`, { method: "DELETE" }); } catch (_) {}
                 activeImportSubId = null;
               }
-              showToast("Import cancelled and submission removed.");
-            },
-          });
-          pulled = bRes.successCount;
-          if (bRes.cancelled) importCancelled = true;
+              showToast("Import stopped and all imported data deleted.");
+              loadHome();
+            } else {
+              showToast(`Import stopped — kept ${initRes.total} cards (${pulled} scans pulled).`);
+              openSubmission(initRes.submission_id);
+              importCancelled = true; // already opened submission
+            }
+          }
         }
 
         if (!importCancelled) {
@@ -3561,6 +3858,8 @@ $("btn-about-versions")?.addEventListener("click", () => {
       title: $("sub-title").value.trim(),
       submission_number: $("sub-number").value.trim(),
       submitted_date: $("sub-date").value,
+      grading_started_date: $("sub-grading-started")?.value || "",
+      grading_finished_date: $("sub-grading-finished")?.value || "",
       status: $("sub-not-shipped")?.checked ? "Not Shipped" : "In Grading",
       submit_channel: chChecked.join(" / "),
       notes: $("sub-notes").value.trim(),
@@ -3761,22 +4060,62 @@ $("btn-about-versions")?.addEventListener("click", () => {
     e.preventDefault();
     if (!state.currentSubId) return;
     const editCh = Array.from(document.querySelectorAll(".edit-channel-cb:checked")).map((cb) => cb.value).join(" / ");
-    await apiJson(`/api/submissions/${state.currentSubId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: $("edit-sub-title-input").value.trim(),
-        company: $("edit-sub-company-select").value,
-        submitted_date: $("edit-sub-date-input").value,
-        submission_number: $("edit-sub-number-input").value.trim(),
-        status: $("edit-sub-status-select").value,
-        submit_channel: editCh,
-        notes: $("edit-sub-notes-input").value.trim(),
-      }),
-    });
-    $("edit-sub-modal").style.display = "none";
-    showToast("Submission details updated!");
-    openSubmission(state.currentSubId, false, "preserve");
+    try {
+      await apiJson(`/api/submissions/${state.currentSubId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: $("edit-sub-title-input").value.trim(),
+          company: $("edit-sub-company-select").value,
+          submitted_date: $("edit-sub-date-input").value,
+          submission_number: $("edit-sub-number-input").value.trim(),
+          status: $("edit-sub-status-select").value,
+          submit_channel: editCh,
+          notes: $("edit-sub-notes-input").value.trim(),
+        }),
+      });
+      $("edit-sub-modal").style.display = "none";
+      showToast("Submission details updated!");
+      await openSubmission(state.currentSubId, false, "preserve");
+    } catch (err) {
+      showToast(`Could not save submission: ${err?.message || err}`);
+    }
+  });
+
+  // Dedicated Grading Dates Modal (opened from top-right Grading Turnaround card)
+  document.addEventListener("click", (ev) => {
+    if (ev.target.closest("#btn-edit-grading-dates")) {
+      const sub = state.currentSubData;
+      if (!sub) return;
+      if ($("gd-started-input")) $("gd-started-input").value = sub.grading_started_date || "";
+      if ($("gd-finished-input")) $("gd-finished-input").value = sub.grading_finished_date || "";
+      if ($("grading-dates-modal")) $("grading-dates-modal").style.display = "flex";
+    }
+  });
+  $("btn-close-grading-dates")?.addEventListener("click", () => ($("grading-dates-modal").style.display = "none"));
+  $("btn-cancel-grading-dates")?.addEventListener("click", () => ($("grading-dates-modal").style.display = "none"));
+  $("btn-clear-grading-dates")?.addEventListener("click", () => {
+    if ($("gd-started-input")) $("gd-started-input").value = "";
+    if ($("gd-finished-input")) $("gd-finished-input").value = "";
+  });
+  $("grading-dates-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!state.currentSubId) return;
+    try {
+      await apiJson(`/api/submissions/${state.currentSubId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grading_started_date: $("gd-started-input")?.value || "",
+          grading_finished_date: $("gd-finished-input")?.value || "",
+        }),
+      });
+      $("grading-dates-modal").style.display = "none";
+      showToast("Grading turnaround dates updated!");
+      await openSubmission(state.currentSubId, false, "preserve");
+    } catch (err) {
+      showToast(`Could not save grading dates: ${err?.message || err}`);
+    }
   });
 
   $("btn-edit-sub-title").addEventListener("click", () => {
@@ -4315,13 +4654,15 @@ $("btn-about-versions")?.addEventListener("click", () => {
 });
 
 
-const CURRENT_APP_VERSION = "0.91";
+const CURRENT_APP_VERSION = "0.93.2";
 const CURRENT_UPDATE_BULLETS = [
-  "Redesigned Multi-Card Share Graphic (up to 4 cards) with bold, readable stats and zero wasted margin.",
-  "Home Card View now lets you scroll left & right through all card photos just like List View.",
-  "Redesigned Submission List View with large slab scans and compact, aligned Market Value & Profit info.",
-  "Locked horizontal page width so the app never scrolls left or right.",
-  "External links open in your system default browser while in-app popups keep navigation inside the popup.",
+  "Fixed Stop Import immediately deleting the submission in the background before the Keep vs. Delete popup appeared, and added instant abort for in-flight cert scan requests.",
+  "Fixed Setup Wizard version detection when extracting directly into an existing install folder (reads Windows Registry version instead of showing the same version -> same version).",
+  "Added a theme-matched Grading Turnaround card in the top-right corner of Submission Detail with Business Days, Calendar Days, an Edit Dates modal, and an info tooltip.",
+  "Excluded weekends and all 11 observed US federal holidays from Business Days across the UI and share infographics.",
+  "Standardized Home submission card headers into two clean rows with full day-counter badges and right-aligned Edit/Delete icons.",
+  "Upgraded Share Infographics with a 3-column bottom row (Grade Breakdown, Grading Turnaround, larger Featured Slabs / Raw Cards fallback) and a dedicated Pristine 10s callout in the Gem Rate card.",
+  "Fixed Home search by Order / Submission # (including comma-separated numbers) and full multi-part version display (0.xx.xx.x) in the Setup Wizard and About modal.",
 ];
 
 async function openExternalUrl(url) {
@@ -4349,11 +4690,12 @@ window.addEventListener("message", (ev) => {
 
 function maybeShowWelcomeUpdateModal() {
   if (localStorage.getItem("tcg_vault_welcome_disabled") === "1") return;
-  if (localStorage.getItem("tcg_vault_last_seen_ver") === CURRENT_APP_VERSION) return;
   const modal = $("welcome-update-modal");
   const list = $("welcome-update-bullets");
   const cb = $("welcome-disable-cb");
+  const badge = $("welcome-version-badge");
   if (!modal || !list) return;
+  if (badge) badge.textContent = `v${CURRENT_APP_VERSION}`;
   list.innerHTML = CURRENT_UPDATE_BULLETS.map((b) => `<li>${escapeHtml(b)}</li>`).join("");
   if (cb) cb.checked = false;
   modal.style.display = "flex";
@@ -4362,7 +4704,6 @@ function maybeShowWelcomeUpdateModal() {
 function closeWelcomeUpdateModal() {
   const modal = $("welcome-update-modal");
   const cb = $("welcome-disable-cb");
-  localStorage.setItem("tcg_vault_last_seen_ver", CURRENT_APP_VERSION);
   if (cb && cb.checked) {
     localStorage.setItem("tcg_vault_welcome_disabled", "1");
   }
@@ -4371,6 +4712,13 @@ function closeWelcomeUpdateModal() {
 
 $("btn-close-welcome-modal")?.addEventListener("click", closeWelcomeUpdateModal);
 $("btn-welcome-got-it")?.addEventListener("click", closeWelcomeUpdateModal);
+$("btn-welcome-version-history")?.addEventListener("click", () => {
+  closeWelcomeUpdateModal();
+  if ($("help-modal")) {
+    $("help-modal").style.display = "flex";
+    renderHelpTab("versions");
+  }
+});
 
 $("btn-inapp-copy-link")?.addEventListener("click", async () => {
   const cur = inAppTabs[activeInAppTabIdx];

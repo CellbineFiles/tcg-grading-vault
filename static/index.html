@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TCG Grading Tracker — Local Vault</title>
   <link rel="icon" type="image/x-icon" href="/static/vault.ico" />
-  <link rel="stylesheet" href="/static/styles.css?v=91" />
+  <link rel="stylesheet" href="/static/styles.css?v=932" />
 </head>
 <body>
   <header class="topbar">
@@ -135,7 +135,7 @@
       <div class="toolbar" style="gap:12px;">
         <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
           <h2 class="section-title" style="margin:0;">Submissions</h2>
-          <input type="search" id="home-card-search" class="home-search-input" placeholder="🔍 Search any card across all subs..." />
+          <input type="search" id="home-card-search" class="home-search-input" placeholder="🔍 Search cards, cert #, or order / sub #..." />
         </div>
         <div class="toolbar-controls">
           <button type="button" class="btn btn-secondary btn-sm" id="btn-open-all-cards" title="Browse &amp; search every card in your database">🗂️ All Cards</button><span class="info-tip" data-tip="Browse, filter, and search every card across all submissions in one unified view.">ⓘ</span>
@@ -214,11 +214,19 @@
           </div>
           <div class="form-field">
             <label for="sub-number">Submission / Order #</label>
-            <input type="text" id="sub-number" placeholder="e.g., 12345678" />
+            <input type="text" id="sub-number" placeholder="e.g., 12345678, 87654321 (comma-separated)" />
           </div>
           <div class="form-field">
             <label for="sub-date">Date Submitted</label>
             <input type="date" id="sub-date" />
+          </div>
+          <div class="form-field">
+            <label for="sub-grading-started">Date Grading Started (Optional) <span class="info-tip" data-tip="Used to calculate business days and calendar days elapsed in grading.">ⓘ</span></label>
+            <input type="date" id="sub-grading-started" />
+          </div>
+          <div class="form-field">
+            <label for="sub-grading-finished">Date Grading Finished (Optional) <span class="info-tip" data-tip="Stops the grading day counter at this date when completed.">ⓘ</span></label>
+            <input type="date" id="sub-grading-finished" />
           </div>
           <div class="form-field">
             <label for="sub-notes">Notes</label>
@@ -409,19 +417,20 @@
     <!-- SUBMISSION DETAIL VIEW -->
     <section id="view-submission" class="view">
       <div class="panel">
-        <div class="panel-header">
-          <div class="sub-header-left">
-            <span id="detail-sub-badge" class="badge">PSA</span>
-            <div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <h2 id="detail-sub-title" style="margin:0;">Submission</h2>
-                <button type="button" class="btn-icon-edit" id="btn-edit-sub-title" title="Rename Submission"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+        <div class="panel-header sub-panel-header">
+          <div class="sub-header-main">
+            <div class="sub-header-left">
+              <span id="detail-sub-badge" class="badge">PSA</span>
+              <div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <h2 id="detail-sub-title" style="margin:0;">Submission</h2>
+                  <button type="button" class="btn-icon-edit" id="btn-edit-sub-title" title="Rename Submission"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><div class="muted" id="detail-sub-meta"></div><button type="button" class="btn btn-ghost btn-sm" id="btn-edit-sub-info" style="padding:2px 8px;font-size:11px;display:inline-flex;align-items:center;gap:4px;opacity:0.65;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit Info</button></div>
               </div>
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><div class="muted" id="detail-sub-meta"></div><button type="button" class="btn btn-ghost btn-sm" id="btn-edit-sub-info" style="padding:2px 8px;font-size:11px;display:inline-flex;align-items:center;gap:4px;opacity:0.65;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit Info</button></div>
             </div>
-          </div>
-          <div class="btn-group">
-            <button class="btn btn-primary" id="btn-share-sub">📤 Share This Sub</button><span class="info-tip" data-tip="Create a shareable PNG infographic for ONLY this submission.">ⓘ</span>
+            <div class="btn-group sub-actions-row">
+            <button class="btn btn-primary" id="btn-share-sub">📤 Share This Sub</button><span class="info-tip" data-tip="Create a shareable PNG infographic for this submission with Grade Breakdown, Grading Turnaround (business &amp; calendar days), Pristine 10 stats, and Featured Slabs (or raw card photos if no slabs yet).">ⓘ</span>
             <button class="btn btn-secondary" id="btn-export-collectr" title="Generate a Collectr / TCGplayer-formatted CSV or plain-text .txt export for this submission">📋 Export for Collectr</button>
             <button class="btn btn-secondary" id="btn-export-sub-bundle" title="Export this entire submission (cards + scans) as a portable .zip bundle">📦 Export Sub</button><span class="info-tip" data-tip="Generates a TCGplayer/Collectr-ready CSV and plain-text .txt export with card name, set, collector #, variant, language, condition, grade, and cert #.">ⓘ</span>
             <button class="btn btn-secondary" id="btn-open-fanatics-csv">📄 Import Fanatics CSV</button><span class="info-tip" data-tip="Match and update cards in this submission from a Fanatics Collect CSV export.">ⓘ</span>
@@ -438,6 +447,8 @@
             <button class="btn btn-primary" id="btn-sub-add-card">+ Add Card to Sub</button>
             <button class="btn btn-danger" id="btn-sub-delete">Delete Sub</button>
           </div>
+          </div>
+          <div id="sub-grading-timer-card" class="grading-timer-card"></div>
         </div>
 
         <div class="sub-stats-strip" id="detail-sub-stats"></div>
@@ -1234,8 +1245,8 @@
           <input type="date" id="edit-sub-date-input" />
         </div>
         <div class="form-field">
-          <label for="edit-sub-number-input">Order / Submission #</label>
-          <input type="text" id="edit-sub-number-input" />
+          <label for="edit-sub-number-input">Order / Submission # (comma-separated for multiple)</label>
+          <input type="text" id="edit-sub-number-input" placeholder="e.g., 12345678, 87654321" />
         </div>
         <div class="form-field">
           <label for="edit-sub-status-select">Status</label>
@@ -1266,6 +1277,36 @@
         <div class="form-actions full">
           <button type="button" class="btn btn-ghost" id="btn-cancel-edit-sub">Cancel</button>
           <button type="submit" class="btn btn-primary">Save Submission Info</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Grading Dates Modal -->
+  <div id="grading-dates-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card" style="max-width:440px;">
+      <div class="panel-header" style="margin-bottom:14px;">
+        <h3>⏱️ Grading Turnaround Dates</h3>
+        <button class="btn btn-ghost btn-sm" id="btn-close-grading-dates">✕</button>
+      </div>
+      <form id="grading-dates-form" class="form-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="form-field">
+          <label for="gd-started-input">Date Grading Started</label>
+          <input type="date" id="gd-started-input" />
+        </div>
+        <div class="form-field">
+          <label for="gd-finished-input">Date Grading Finished</label>
+          <input type="date" id="gd-finished-input" />
+        </div>
+        <div class="muted full" style="font-size:12px;">
+          Leave <strong>Date Grading Finished</strong> blank while still in grading. Setting it stops the turnaround counter.
+        </div>
+        <div class="form-actions full" style="justify-content:space-between;">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-grading-dates">Clear Dates</button>
+          <div style="display:flex;gap:8px;">
+            <button type="button" class="btn btn-ghost" id="btn-cancel-grading-dates">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Dates</button>
+          </div>
         </div>
       </form>
     </div>
@@ -1345,7 +1386,7 @@
 
 
   <footer class="app-footer">
-    <span>TCG Grading Vault • <strong>v0.91</strong></span>
+    <span>TCG Grading Vault • <strong>v0.92.2</strong></span>
     <div style="display:flex;gap:8px;align-items:center;">
       <button type="button" class="btn btn-ghost btn-sm" id="btn-back-to-top" style="font-size:12px;">↑ Back to Top</button>
       <button type="button" class="btn btn-ghost btn-sm" id="btn-open-about" style="font-size:12px;">👤 About &amp; Contact</button>
@@ -1357,7 +1398,7 @@
     <div class="modal-card" style="max-width:480px;">
       <div class="panel-header" style="margin-bottom:12px;">
         <div style="display:flex;align-items:center;gap:10px;">
-          <span class="badge badge-PSA" style="background:var(--primary);color:#fff;">v0.91</span>
+          <span id="about-version-badge" class="badge badge-PSA" style="background:var(--primary);color:#fff;">v0.93.2</span>
           <h3 style="margin:0;">TCG Grading Vault</h3>
         </div>
         <button class="btn btn-ghost btn-sm" id="btn-close-about">✕</button>
@@ -1370,7 +1411,7 @@
         <div style="font-size:13px;line-height:1.7;">
           <div>📧 Email: <a href="mailto:Cellbinefiles@gmail.com" style="color:var(--primary);font-weight:600;">Cellbinefiles@gmail.com</a></div>
           <div>💬 Discord: <strong>@dots0576</strong></div>
-          <div>🏷️ Current Release: <strong>v0.91</strong> <span class="muted">(Pre-release • v1.0 coming on broader release)</span></div>
+          <div>🏷️ Current Release: <strong id="about-current-version">v0.93.2</strong> <span class="muted">(Pre-release • v1.0 coming on broader release)</span></div>
         </div>
       </div>
       <div id="update-check-box" style="display:none;margin:8px 0;padding:10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border);font-size:12.5px;"></div>
@@ -1487,8 +1528,8 @@ https://www.fanaticscollect.com/..." style="width:100%;font-size:12.5px;"></text
     <div class="modal-card" style="max-width:560px;">
       <div class="panel-header" style="margin-bottom:10px;">
         <div>
-          <h3 style="margin:0;">✨ What's New in TCG Grading Vault <span class="badge badge-PSA" style="background:var(--primary);color:#fff;margin-left:6px;">v0.91</span></h3>
-          <div class="muted" style="font-size:12px;">Quick highlights from this update</div>
+          <h3 style="margin:0;">✨ What's New in TCG Grading Vault <span id="welcome-version-badge" class="badge badge-PSA" style="background:var(--primary);color:#fff;margin-left:6px;">v0.93.2</span></h3>
+          <div class="muted" style="font-size:12px;">Highlights from the latest update • See Version History for earlier releases</div>
         </div>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-close-welcome-modal">✕</button>
       </div>
@@ -1496,18 +1537,33 @@ https://www.fanaticscollect.com/..." style="width:100%;font-size:12.5px;"></text
       <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:14px;">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;">
           <input type="checkbox" id="welcome-disable-cb" />
-          <span>Don't show this welcome popup on future updates</span>
+          <span>Don't show this welcome popup again when opening the app</span>
         </label>
         <div class="muted" style="font-size:12px;margin-top:4px;padding-left:24px;">
-          You can re-enable this welcome screen anytime inside <strong>❓ How To → Version History</strong>.
+          You can re-enable this welcome screen or browse past releases anytime in <strong>❓ How To → Version History</strong>.
         </div>
       </div>
-      <div class="form-actions" style="display:flex;justify-content:flex-end;">
+      <div class="form-actions" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <button type="button" class="btn btn-secondary" id="btn-welcome-version-history">📋 Version History</button>
         <button type="button" class="btn btn-primary" id="btn-welcome-got-it">Got It</button>
       </div>
     </div>
   </div>
 
-  <script src="/static/app.js?v=91"></script>
+  <!-- Stop Batch Choice Modal (Keep vs Delete Processed Data) -->
+  <div id="stop-batch-choice-modal" class="modal-backdrop" style="display:none;z-index:10070;">
+    <div class="modal-card" style="max-width:460px;">
+      <div class="panel-header" style="margin-bottom:10px;">
+        <h3 id="stop-batch-title" style="margin:0;">⏹️ Process Stopped</h3>
+      </div>
+      <p id="stop-batch-msg" style="margin:6px 0 16px;font-size:13.5px;line-height:1.55;"></p>
+      <div class="form-actions" style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-danger" id="btn-stop-batch-delete">🗑️ Delete Completed Data</button>
+        <button type="button" class="btn btn-primary" id="btn-stop-batch-keep">✅ Keep Completed Data</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=932"></script>
 </body>
 </html>

@@ -100,6 +100,8 @@ def init_db() -> None:
                 company TEXT NOT NULL CHECK(company IN ('PSA', 'CGC', 'Beckett', 'TAG')),
                 submission_number TEXT DEFAULT '',
                 submitted_date TEXT DEFAULT '',
+                grading_started_date TEXT DEFAULT '',
+                grading_finished_date TEXT DEFAULT '',
                 status TEXT DEFAULT 'In Grading',
                 submit_channel TEXT DEFAULT '',
                 notes TEXT DEFAULT '',
@@ -188,6 +190,8 @@ def init_db() -> None:
                     company TEXT NOT NULL CHECK(company IN ('PSA', 'CGC', 'Beckett', 'TAG')),
                     submission_number TEXT DEFAULT '',
                     submitted_date TEXT DEFAULT '',
+                grading_started_date TEXT DEFAULT '',
+                grading_finished_date TEXT DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'In Grading',
                     notes TEXT DEFAULT '',
                     created_at TEXT NOT NULL,
@@ -201,6 +205,10 @@ def init_db() -> None:
         sub_cols = {r[1] for r in conn.execute("PRAGMA table_info(submissions)").fetchall()}
         if "submit_channel" not in sub_cols:
             conn.execute("ALTER TABLE submissions ADD COLUMN submit_channel TEXT DEFAULT ''")
+        if "grading_started_date" not in sub_cols:
+            conn.execute("ALTER TABLE submissions ADD COLUMN grading_started_date TEXT DEFAULT ''")
+        if "grading_finished_date" not in sub_cols:
+            conn.execute("ALTER TABLE submissions ADD COLUMN grading_finished_date TEXT DEFAULT ''")
         conn.execute("UPDATE cards SET status = 'Unsold' WHERE status = 'Graded'")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_sub_id ON cards(submission_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_cert ON cards(cert_number);")
@@ -1273,6 +1281,8 @@ class SubmissionCreate(BaseModel):
     company: str
     submission_number: str = ""
     submitted_date: str = ""
+    grading_started_date: str = ""
+    grading_finished_date: str = ""
     status: str = "In Grading"
     submit_channel: str = ""
     notes: str = ""
@@ -1283,6 +1293,8 @@ class SubmissionUpdate(BaseModel):
     company: Optional[str] = None
     submission_number: Optional[str] = None
     submitted_date: Optional[str] = None
+    grading_started_date: Optional[str] = None
+    grading_finished_date: Optional[str] = None
     status: Optional[str] = None
     submit_channel: Optional[str] = None
     notes: Optional[str] = None
@@ -1520,14 +1532,16 @@ def _insert_bundle_meta(meta: dict, source_name: str, conn, zf=None, folder_path
     ts = now_iso()
     cur = conn.execute(
         """
-        INSERT INTO submissions (title, company, submission_number, submitted_date, status, submit_channel, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO submissions (title, company, submission_number, submitted_date, grading_started_date, grading_finished_date, status, submit_channel, notes, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             sub_obj.get("title") or source_name or "Imported Submission",
             sub_obj.get("company") or "PSA",
             sub_obj.get("submission_number") or "",
             sub_obj.get("submitted_date") or datetime.now().strftime("%Y-%m-%d"),
+            sub_obj.get("grading_started_date") or "",
+            sub_obj.get("grading_finished_date") or "",
             sub_obj.get("status") or "In Grading",
             sub_obj.get("submit_channel") or "",
             sub_obj.get("notes") or f"Imported from bundle ({source_name})",
@@ -1653,6 +1667,8 @@ def export_submission_bundle(sub_id: int, save_to_shared: bool = False):
             "company": sub.get("company") or "PSA",
             "submission_number": sub.get("submission_number") or "",
             "submitted_date": sub.get("submitted_date") or "",
+            "grading_started_date": sub.get("grading_started_date") or "",
+            "grading_finished_date": sub.get("grading_finished_date") or "",
             "status": sub.get("status") or "In Grading",
             "submit_channel": sub.get("submit_channel") or "",
             "notes": sub.get("notes") or "",
@@ -1844,14 +1860,16 @@ def create_submission(payload: SubmissionCreate):
     try:
         cur = conn.execute(
             """
-            INSERT INTO submissions (title, company, submission_number, submitted_date, status, submit_channel, notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO submissions (title, company, submission_number, submitted_date, grading_started_date, grading_finished_date, status, submit_channel, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 title,
                 payload.company,
                 payload.submission_number.strip(),
                 payload.submitted_date.strip() or datetime.now().strftime("%Y-%m-%d"),
+                payload.grading_started_date.strip(),
+                payload.grading_finished_date.strip(),
                 payload.status.strip() or "In Grading",
                 (payload.submit_channel or "").strip(),
                 payload.notes.strip(),
@@ -1943,7 +1961,7 @@ def update_submission(sub_id: int, payload: SubmissionUpdate):
         conn.execute(
             """
             UPDATE submissions
-            SET title = ?, company = ?, submission_number = ?, submitted_date = ?, status = ?, submit_channel = ?, notes = ?, updated_at = ?
+            SET title = ?, company = ?, submission_number = ?, submitted_date = ?, grading_started_date = ?, grading_finished_date = ?, status = ?, submit_channel = ?, notes = ?, updated_at = ?
             WHERE id = ?
             """,
             (
@@ -1951,6 +1969,8 @@ def update_submission(sub_id: int, payload: SubmissionUpdate):
                 company,
                 payload.submission_number.strip() if payload.submission_number is not None else existing["submission_number"],
                 payload.submitted_date.strip() if payload.submitted_date is not None else existing["submitted_date"],
+                payload.grading_started_date.strip() if payload.grading_started_date is not None else (existing["grading_started_date"] if "grading_started_date" in existing.keys() else ""),
+                payload.grading_finished_date.strip() if payload.grading_finished_date is not None else (existing["grading_finished_date"] if "grading_finished_date" in existing.keys() else ""),
                 payload.status.strip() if payload.status is not None else existing["status"],
                 payload.submit_channel.strip() if payload.submit_channel is not None else (existing["submit_channel"] if "submit_channel" in existing.keys() else ""),
                 payload.notes.strip() if payload.notes is not None else existing["notes"],
@@ -2162,7 +2182,8 @@ def list_all_cards(q: str = ""):
                     "card_name", "set_name", "card_number", "card_year", "actual_grade",
                     "cert_number", "status", "submission_title", "submission_company", "curated_date", "notes"
                 )).lower()
-                if q_low not in hay:
+                q_norm = q_low.lstrip("#").strip()
+                if q_low not in hay and (not q_norm or q_norm not in hay):
                     continue
             out.append(c)
         return out
@@ -4239,6 +4260,8 @@ async def smart_import_submission(
     title: str = Form(""),
     company: str = Form(""),
     submitted_date: str = Form(""),
+    grading_started_date: str = Form(""),
+    grading_finished_date: str = Form(""),
     not_shipped: str = Form(""),
     submit_channel: str = Form(""),
 ):
@@ -4266,10 +4289,10 @@ async def smart_import_submission(
     try:
         cur = conn.execute(
             """
-            INSERT INTO submissions (title, company, submission_number, submitted_date, status, submit_channel, notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO submissions (title, company, submission_number, submitted_date, grading_started_date, grading_finished_date, status, submit_channel, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (sub_title, company, sub_num, sub_date, sub_status, submit_channel.strip(), f"Imported via {parsed['format_detected']}", ts, ts),
+            (sub_title, company, sub_num, sub_date, grading_started_date.strip(), grading_finished_date.strip(), sub_status, submit_channel.strip(), f"Imported via {parsed['format_detected']}", ts, ts),
         )
         sub_id = cur.lastrowid
         for c in cards_data:
@@ -5946,6 +5969,8 @@ class SubmissionCreate(BaseModel):
     company: str
     submission_number: str = ""
     submitted_date: str = ""
+    grading_started_date: str = ""
+    grading_finished_date: str = ""
     status: str = "In Grading"
     submit_channel: str = ""
     notes: str = ""
@@ -5956,6 +5981,8 @@ class SubmissionUpdate(BaseModel):
     company: Optional[str] = None
     submission_number: Optional[str] = None
     submitted_date: Optional[str] = None
+    grading_started_date: Optional[str] = None
+    grading_finished_date: Optional[str] = None
     status: Optional[str] = None
     submit_channel: Optional[str] = None
     notes: Optional[str] = None
@@ -6272,14 +6299,16 @@ def create_submission(payload: SubmissionCreate):
     try:
         cur = conn.execute(
             """
-            INSERT INTO submissions (title, company, submission_number, submitted_date, status, submit_channel, notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO submissions (title, company, submission_number, submitted_date, grading_started_date, grading_finished_date, status, submit_channel, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 title,
                 payload.company,
                 payload.submission_number.strip(),
                 payload.submitted_date.strip() or datetime.now().strftime("%Y-%m-%d"),
+                payload.grading_started_date.strip(),
+                payload.grading_finished_date.strip(),
                 payload.status.strip() or "In Grading",
                 (payload.submit_channel or "").strip(),
                 payload.notes.strip(),
@@ -6371,7 +6400,7 @@ def update_submission(sub_id: int, payload: SubmissionUpdate):
         conn.execute(
             """
             UPDATE submissions
-            SET title = ?, company = ?, submission_number = ?, submitted_date = ?, status = ?, submit_channel = ?, notes = ?, updated_at = ?
+            SET title = ?, company = ?, submission_number = ?, submitted_date = ?, grading_started_date = ?, grading_finished_date = ?, status = ?, submit_channel = ?, notes = ?, updated_at = ?
             WHERE id = ?
             """,
             (
@@ -6379,6 +6408,8 @@ def update_submission(sub_id: int, payload: SubmissionUpdate):
                 company,
                 payload.submission_number.strip() if payload.submission_number is not None else existing["submission_number"],
                 payload.submitted_date.strip() if payload.submitted_date is not None else existing["submitted_date"],
+                payload.grading_started_date.strip() if payload.grading_started_date is not None else (existing["grading_started_date"] if "grading_started_date" in existing.keys() else ""),
+                payload.grading_finished_date.strip() if payload.grading_finished_date is not None else (existing["grading_finished_date"] if "grading_finished_date" in existing.keys() else ""),
                 payload.status.strip() if payload.status is not None else existing["status"],
                 payload.submit_channel.strip() if payload.submit_channel is not None else (existing["submit_channel"] if "submit_channel" in existing.keys() else ""),
                 payload.notes.strip() if payload.notes is not None else existing["notes"],
@@ -8709,7 +8740,10 @@ def infographic_submission(sub_id: int, theme: str = "water"):
         "gem_10_count": sub.get("gem_10_count", 0),
         "graded_with_grade_count": sub.get("graded_with_grade_count", 0),
     }
-    previews = [c["cert_front_image"] for c in cards if c.get("cert_front_image")]
+    slab_previews = [c["cert_front_image"] for c in cards if c.get("cert_front_image")]
+    raw_previews = [c["raw_front_image"] for c in cards if c.get("raw_front_image")]
+    previews = slab_previews if slab_previews else raw_previews
+    featured_lbl = "FEATURED SLABS" if slab_previews else ("FEATURED RAW CARDS" if raw_previews else "FEATURED SLABS")
     subtitle = f"Submitted {sub.get('submitted_date') or 'N/A'}  •  Status: {sub.get('status')}"
     png_bytes = generate_summary_infographic(
         sub["title"],
@@ -8720,6 +8754,9 @@ def infographic_submission(sub_id: int, theme: str = "water"):
         UPLOADS_DIR,
         theme_name=theme,
         company_badge=sub["company"],
+        grading_started_date=sub.get("grading_started_date") or "",
+        grading_finished_date=sub.get("grading_finished_date") or "",
+        featured_label=featured_lbl,
     )
     return Response(content=png_bytes, media_type="image/png")
 
@@ -8732,7 +8769,10 @@ def infographic_overall(theme: str = "water"):
         cards = [dict(r) for r in conn.execute("SELECT * FROM cards").fetchall()]
     finally:
         conn.close()
-    previews = [c["cert_front_image"] for c in cards if c.get("cert_front_image")]
+    slab_previews = [c["cert_front_image"] for c in cards if c.get("cert_front_image")]
+    raw_previews = [c["raw_front_image"] for c in cards if c.get("raw_front_image")]
+    previews = slab_previews if slab_previews else raw_previews
+    featured_lbl = "FEATURED SLABS" if slab_previews else ("FEATURED RAW CARDS" if raw_previews else "FEATURED SLABS")
     subtitle = f"All Combined History  •  {stats['total_submissions']} Submissions  •  {stats['total_cards']} Cards Tracked"
     png_bytes = generate_summary_infographic(
         "Complete Grading History",
@@ -8742,6 +8782,7 @@ def infographic_overall(theme: str = "water"):
         previews,
         UPLOADS_DIR,
         theme_name=theme,
+        featured_label=featured_lbl,
     )
     return Response(content=png_bytes, media_type="image/png")
 
@@ -8974,10 +9015,23 @@ def shutdown_server():
     return {"ok": True, "message": "TCG Grading Vault server is stopping."}
 
 
+def _read_app_version() -> str:
+    ver_file = BASE_DIR / "version.txt"
+    if ver_file.exists():
+        v = ver_file.read_text("utf-8").strip().lstrip("vV")
+        if v:
+            return v
+    return "0.93.2"
+
+
+@app.get("/api/version")
+def get_app_version():
+    return {"version": _read_app_version()}
+
+
 @app.get("/api/check-updates")
 def check_github_updates():
-    ver_file = BASE_DIR / "version.txt"
-    cur_ver = ver_file.read_text("utf-8").strip() if ver_file.exists() else "0.80"
+    cur_ver = _read_app_version()
     def _ver_tuple(v: str):
         nums = [int(x) for x in re.findall(r"\d+", v or "")]
         return tuple(nums) if nums else (0,)
